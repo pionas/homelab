@@ -6,6 +6,9 @@ source "$(dirname "$0")/lib.sh"
 parse_common_args "$@"
 require_root
 
+SYSFS=${HOMELAB_SYSFS:-/sys}
+[[ $SYSFS == /* && $SYSFS != *..* ]] || die "HOMELAB_SYSFS must be an absolute path without .."
+
 preflight() {
   local rc=0 os f
   os=$(os_release_value ID)
@@ -20,7 +23,7 @@ preflight() {
     rc=1
   }
   # /sys/module: already loaded (also visible in a container); modinfo: loadable.
-  [[ -d /sys/module/wireguard ]] || modinfo wireguard >/dev/null 2>&1 || {
+  [[ -d $SYSFS/module/wireguard ]] || modinfo wireguard >/dev/null 2>&1 || {
     log_error "kernel module wireguard is not available"
     rc=1
   }

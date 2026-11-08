@@ -21,6 +21,8 @@ setup() {
   fakes
   export HOMELAB_STATE_DIR=$T/state HOMELAB_NODE_DIR=$PKG/node HOMELAB_OS_RELEASE=$T/os-release
   export HOMELAB_ADMIN_KEYS=$T/authorized_keys
+  # An empty sysfs: whether the wireguard module is there is decided by the modinfo fake.
+  export HOMELAB_SYSFS=$T/sys
   unset SSH_CONNECTION
 }
 
@@ -715,4 +717,10 @@ verify() {
   HOMELAB_CA_BUNDLE='x/../y' step 90-verify
   [ "$status" -eq 1 ]
   [[ $stderr == *"HOMELAB_CA_BUNDLE must be an absolute path"* ]]
+}
+
+@test "00: an already loaded wireguard module (sysfs, as in a container) is enough" {
+  mkdir -p "$T/sys/module/wireguard"
+  FAKE_NO_WG_MODULE=1 step 00-preflight
+  [ "$status" -eq 0 ]
 }
