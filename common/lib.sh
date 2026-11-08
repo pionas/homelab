@@ -218,6 +218,45 @@ ssh_session() {
   fi
 }
 
+HOMELAB_OS_RELEASE=${HOMELAB_OS_RELEASE:-/etc/os-release}
+
+# os_release_value KEY — one field of os-release (ID, VERSION_CODENAME); the file is read, not
+# sourced, and only plain values [a-z0-9._-] are returned (empty otherwise).
+os_release_value() {
+  [[ $1 =~ ^[A-Z_]+$ ]] || die "os_release_value: bad key $1"
+  sed -n "s/^$1=\"\{0,1\}\([a-z0-9._-]*\)\"\{0,1\}\$/\1/p" "$HOMELAB_OS_RELEASE" 2>/dev/null | head -n1
+}
+
+# fetch URL DEST — downloads over HTTPS only (TLS 1.2+, no redirects to other schemes).
+fetch() {
+  [[ $1 == https://* ]] || die "fetch: only https URLs, got: $1"
+  run curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 -o "$2" "$1"
+}
+
+# verify_sha256 FILE SHA256 — dies unless FILE has exactly this checksum.
+verify_sha256() {
+  if ((DRY_RUN)); then
+    printf '[dry-run] verify sha256 %s = %s\n' "$1" "$2"
+    return 0
+  fi
+  local got
+  got=$(sha256sum "$1" | cut -d' ' -f1)
+  [[ $got == "$2" ]] || die "checksum mismatch for $1: expected $2, got $got (download tampered or changed)"
+}
+
+# verify_gpg_fingerprint FILE FINGERPRINT — dies unless FILE is exactly the key with this fingerprint.
+verify_gpg_fingerprint() {
+  if ((DRY_RUN)); then
+    printf '[dry-run] verify gpg fingerprint %s = %s\n' "$1" "$2"
+    return 0
+  fi
+  local home fprs
+  home=$(mktemp -d)
+  fprs=$(gpg --homedir "$home" --show-keys --with-colons "$1" 2>/dev/null | awk -F: '$1 == "fpr" {print $10}')
+  rm -rf "$home"
+  [[ $fprs == "$2" ]] || die "unexpected key in $1: expected only $2, got: ${fprs:-none}"
+}
+
 # check_flags — the shared settings a caller may pass in the environment must be plain values.
 check_flags() {
   [[ $DRY_RUN =~ ^[01]$ && $FORCE =~ ^[01]$ ]] || die "DRY_RUN and FORCE must be 0 or 1"
