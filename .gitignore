@@ -3,3 +3,4 @@ out/
 secrets.env
 *.env.local
 .agent/
+.claude/settings.local.json
