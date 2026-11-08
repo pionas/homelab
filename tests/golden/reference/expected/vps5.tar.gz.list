@@ -1,0 +1,10 @@
+common/
+common/lib.sh
+common/root_ca.crt
+vps5/
+vps5/install.sh
+vps5/node.env
+vps5/secrets.env
+vps5/services/
+vps5/services/node-agent/
+vps5/wg0.conf

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
 # Wizard flow: asks the questions (lib/ui.sh), builds the state (lib/state.sh), validates the plan
-# (lib/validate.sh) and generates secrets, WireGuard and CA files into OUT_DIR. Packages: #10.
+# (lib/validate.sh) and generates secrets, WireGuard, CA files and packages (lib/render.sh) into OUT_DIR.
 
 _WIZARD_LIB=${BASH_SOURCE[0]%/*}
 # shellcheck source=lib/ui.sh
@@ -14,6 +14,8 @@ source "$_WIZARD_LIB/secrets.sh"
 source "$_WIZARD_LIB/wg.sh"
 # shellcheck source=lib/ca.sh
 source "$_WIZARD_LIB/ca.sh"
+# shellcheck source=lib/render.sh
+source "$_WIZARD_LIB/render.sh"
 
 WIZARD_TOOLS=(yq wg openssl qrencode step)
 
@@ -140,10 +142,11 @@ wizard_generate() {
   while IFS= read -r name; do
     wg_render_device "$out_dir" "$name" || return 1
   done < <(state_query '.admin_devices[].name')
+  render_all "$out_dir" || return 1
   state_save "$out_dir/state.yaml" || return 1
   if ((WIZARD_EXISTING)); then
     log_info "new peers added: re-run install step 02 (WireGuard) on: $(state_query '.machines[].name' |
       head -n "$WIZARD_EXISTING" | tr '\n' ' ')"
   fi
-  log_info "done: $out_dir/state.yaml, secrets, WireGuard and CA files"
+  log_info "done: packages and $out_dir/INSTALL_ORDER.md"
 }
