@@ -15,6 +15,7 @@ wizard.sh              # punkt wejścia kreatora
 lib/                   # funkcje kreatora (ui, state, secrets, wg, ca, catalog, render)
 catalog/<id>/          # service.conf + szablony (*.tpl, manifesty k3s, install.sh)
 common/                # kroki instalacji wspólne: lib.sh, 01-base.sh, 02-wireguard.sh ...
+scripts/dev.sh         # komendy deweloperskie (lint, test, golden, validate, container)
 tests/unit/            # testy bats funkcji kreatora
 tests/golden/          # oczekiwane wyniki generowania dla przykładowych state.yaml
 tests/container/       # testy kroków instalacji w kontenerze z systemd
@@ -38,11 +39,12 @@ out/                   # wynik kreatora — NIGDY w Git
 ## Komendy
  
 ```bash
-make lint        # shellcheck + shfmt -d
-make test        # bats tests/unit
-make golden      # generowanie z tests/golden/*/state.yaml i porównanie z oczekiwanym wynikiem
-make validate    # walidacja wygenerowanych plików: docker compose config, kubeconform, yq
-make container   # testy kroków instalacji w kontenerze Debian z systemd
+scripts/dev.sh lint        # shellcheck + shfmt -d -i 2 -ci (także service.conf)
+scripts/dev.sh test        # bats tests/unit
+scripts/dev.sh golden      # generowanie z tests/golden/*/state.yaml i porównanie z oczekiwanym wynikiem
+scripts/dev.sh validate    # walidacja wygenerowanych plików: docker compose config, kubeconform, yq
+scripts/dev.sh container   # testy kroków instalacji w kontenerze Debian z systemd
+scripts/dev.sh lint test   # kilka komend naraz; bez make — zwykły skrypt Bash
 ```
  
 ## Weryfikacja wygenerowanych plików
