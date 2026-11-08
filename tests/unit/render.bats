@@ -103,12 +103,48 @@ listing() { tar -tzf "$OUT/$1.tar.gz"; }
 }
 
 @test "re-rendering removes services no longer on the machine and gives identical archives" {
-  cp "$OUT/vps1.tar.gz" "$BATS_TEST_TMPDIR/vps1.tar.gz"
-  run bash -c 'set -Eeuo pipefail; source "$REPO_ROOT/lib/render.sh"; catalog_load "$CAT"
+  local copy="$BATS_TEST_TMPDIR/out"
+  cp -a "$OUT" "$copy"
+  run env OUT="$copy" bash -c 'set -Eeuo pipefail; source "$REPO_ROOT/lib/render.sh"; catalog_load "$CAT"
     state_load "$OUT/state.yaml"; render_all "$OUT"
     state_set_services vps2 node-agent redis; render_all "$OUT"'
   [ "$status" -eq 0 ]
-  cmp "$BATS_TEST_TMPDIR/vps1.tar.gz" "$OUT/vps1.tar.gz"
-  [ ! -e "$OUT/vps2/services/postgresql" ]
-  [[ $(listing vps2) != *postgresql* ]]
+  cmp "$OUT/vps1.tar.gz" "$copy/vps1.tar.gz"
+  [ ! -e "$copy/vps2/services/postgresql" ]
+  [[ $(tar -tzf "$copy/vps2.tar.gz") != *postgresql* ]]
+}
+
+@test "install.sh --step runs one step (03-ssh -> 03-ufw.sh, NN-id -> service), passes flags, rejects unknown" {
+  local pkg="$BATS_TEST_TMPDIR/pkg" f
+  mkdir -p "$pkg" && tar -xzf "$OUT/vps2.tar.gz" -C "$pkg"
+  # Stub steps that only print their name and arguments: nothing real runs here.
+  for f in 00-preflight 01-base 02-wireguard 03-ufw 04-ca-trust 10-docker; do
+    printf 'echo "%s $*"\n' "$f" >"$pkg/common/$f.sh"
+  done
+  for f in node-agent postgresql redis postgres-exporter; do
+    mkdir -p "$pkg/vps2/services/$f" && printf 'echo "%s $*"\n' "$f" >"$pkg/vps2/services/$f/install.sh"
+  done
+  run "$pkg/vps2/install.sh" --step 03-ssh --dry-run
+  [ "$status" -eq 0 ]
+  [ "$output" = "03-ufw --dry-run" ]
+  run "$pkg/vps2/install.sh" --step 30-postgresql
+  [ "$output" = "postgresql " ]
+  run "$pkg/vps2/install.sh" --force
+  [ "${#lines[@]}" -eq 10 ]
+  [ "${lines[0]}" = "00-preflight --force" ]
+  [ "${lines[9]}" = "postgres-exporter --force" ]
+  run "$pkg/vps2/install.sh" --step 99
+  [ "$status" -eq 2 ]
+  [[ $output == *"unknown step: 99"* ]]
+  rm "$pkg/common/02-wireguard.sh"
+  run "$pkg/vps2/install.sh"
+  [ "$status" -eq 1 ]
+  [[ $output == *"missing install step: ../common/02-wireguard.sh"* ]]
+  [[ $output != *00-preflight* ]] # nothing runs when a step file is missing
+}
+
+@test "node.env: service PORTS (WireGuard only) and PUBLIC_PORTS (edge)" {
+  grep -qx 'PORTS="5432 6379 9100 9187"' "$OUT/vps2/node.env"
+  grep -qx 'PUBLIC_PORTS=""' "$OUT/vps2/node.env"
+  grep -qx 'PUBLIC_PORTS="80 443"' "$OUT/edge/node.env"
 }
