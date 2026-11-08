@@ -39,7 +39,9 @@ EOF
   run env DEBIAN_FRONTEND=noninteractive apt-get update
   run env DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io \
     docker-buildx-plugin docker-compose-plugin
-  run systemctl enable --now docker
+  if in_container; then container_skip "starting dockerd (needs a privileged container)"; else
+    run systemctl enable --now docker
+  fi
 }
 
 if [[ -z ${COMPOSE_SERVICES:-} ]]; then

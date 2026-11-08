@@ -40,7 +40,9 @@ base_packages() {
 }
 
 base_system() {
-  run hostnamectl set-hostname "$NODE_NAME"
+  if in_container; then container_skip "hostname $NODE_NAME (set by the container runtime)"; else
+    run hostnamectl set-hostname "$NODE_NAME"
+  fi
   run timedatectl set-timezone "$TIMEZONE"
   run systemctl enable --now chrony
   write_file /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
@@ -64,7 +66,10 @@ EOF
   run systemctl enable fail2ban
   run systemctl restart fail2ban
   echo 'net.ipv4.ip_forward = 1' | write_file /etc/sysctl.d/90-homelab.conf
-  run sysctl --system
+  # Only this file: `sysctl --system` would also re-apply every other sysctl.d file.
+  if in_container; then container_skip "sysctl (read-only /proc/sys)"; else
+    run sysctl -p /etc/sysctl.d/90-homelab.conf
+  fi
 }
 
 admin_user() {

@@ -36,6 +36,7 @@ fake() { printf '#!/usr/bin/env bash\n%s\n' "$2" >"$T/bin/$1" && chmod +x "$T/bi
 fakes() {
   fake sshd 'case $1 in -T) echo "port ${FAKE_SSHD_PORT:-22}" ;; esac'
   fake getent '[[ -z ${FAKE_NO_NET:-} ]]'
+  fake systemd-detect-virt '[[ -n ${FAKE_CONTAINER:-} ]]'
   fake dpkg '[[ $1 == --print-architecture ]] && echo "${FAKE_ARCH:-amd64}"'
   fake modinfo '[[ -z ${FAKE_NO_WG_MODULE:-} ]]'
   fake id '[[ $1 == -u && -n ${FAKE_ADMIN_EXISTS:-} ]] && echo 1000 || exit 1'
@@ -111,6 +112,7 @@ before() {
   [[ $output == *'Unattended-Upgrade::Automatic-Reboot "false";'* ]]
   [[ $output == *"ignoreip = 127.0.0.1/8 ::1 10.100.10.0/24"* ]]
   [[ $output == *"net.ipv4.ip_forward = 1"* ]]
+  [[ $output == *"[dry-run] sysctl -p /etc/sysctl.d/90-homelab.conf"* && $output != *"sysctl --system"* ]]
 }
 
 @test "01: user -> verified authorized_keys -> sudo -> sshd hardening -> sshd -t -> reload" {
@@ -596,4 +598,41 @@ service() {
   service node-exporter '$(id)'
   [ "$status" -eq 1 ]
   [[ $output != *docker* ]]
+}
+
+# --- container mode (tests/container): kernel-wide actions are skipped with a message ----------
+
+@test "container: 01 skips hostname and sysctl, says so" {
+  FAKE_CONTAINER=1 step 01-base
+  [ "$status" -eq 0 ]
+  [[ $stderr == *"skipped in container: hostname vps1"* && $stderr == *"skipped in container: sysctl"* ]]
+  [[ $output != *hostnamectl* && $output != *"sysctl -p"* ]]
+  [[ $output == *"systemctl reload ssh"* ]] # everything else still runs
+}
+
+@test "container: 10 installs Docker packages but does not start dockerd" {
+  node_env compose 51820 22 "postgresql" "5432" ""
+  printf 'COMPOSE_SERVICES="postgresql"\n' >>"$PKG/node/node.env"
+  FAKE_CONTAINER=1 step 10-docker
+  [ "$status" -eq 0 ]
+  [[ $output == *docker-ce* && $output != *"enable --now docker"* ]]
+  [[ $stderr == *"skipped in container: starting dockerd"* ]]
+}
+
+@test "container: 11 places CAs and config, verifies the installer, but does not run it" {
+  k3s_package
+  FAKE_CONTAINER=1 step 11-k3s
+  [ "$status" -eq 0 ]
+  [[ $output == *"server/tls/server-ca.key"* && $output == *"verify sha256"* ]]
+  [[ $output != *INSTALL_K3S_VERSION* ]]
+  [[ $stderr == *"skipped in container: running the k3s installer"* ]]
+}
+
+@test "container: node-exporter on compose skips docker compose up" {
+  node_exporter_package
+  printf 'COMPOSE_SERVICES="node-exporter"\n' >>"$PKG/node/node.env"
+  FAKE_CONTAINER=1 service node-exporter
+  [ "$status" -eq 0 ]
+  [[ $output != *"compose -f"* ]]
+  [[ $stderr == *"skipped in container: docker compose up"* ]]
 }

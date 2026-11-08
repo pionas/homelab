@@ -19,7 +19,8 @@ preflight() {
     log_error "no network or DNS: cannot resolve deb.debian.org"
     rc=1
   }
-  modinfo wireguard >/dev/null 2>&1 || {
+  # /sys/module: already loaded (also visible in a container); modinfo: loadable.
+  [[ -d /sys/module/wireguard ]] || modinfo wireguard >/dev/null 2>&1 || {
     log_error "kernel module wireguard is not available"
     rc=1
   }

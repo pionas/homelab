@@ -261,6 +261,13 @@ verify_gpg_fingerprint() {
   [[ $fprs == "$2" ]] || die "unexpected key in $1: expected only $2, got: ${fprs:-none}"
 }
 
+# in_container — true inside a container (tests/container): the kernel is shared with the host,
+# so steps skip what would need it (sysctl, hostname, Docker/k3s daemons) instead of failing.
+in_container() { systemd-detect-virt --container --quiet 2>/dev/null; }
+
+# container_skip WHAT — logs that WHAT is skipped because this is a container.
+container_skip() { log_warn "skipped in container: $*"; }
+
 # check_flags — the shared settings a caller may pass in the environment must be plain values.
 check_flags() {
   [[ $DRY_RUN =~ ^[01]$ && $FORCE =~ ^[01]$ ]] || die "DRY_RUN and FORCE must be 0 or 1"

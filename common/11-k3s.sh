@@ -71,6 +71,11 @@ k3s_install() {
   run install -d -m 700 "$HOMELAB_STATE_DIR"
   fetch "$K3S_INSTALLER_URL" "$installer"
   verify_sha256 "$installer" "$K3S_INSTALLER_SHA256"
+  if in_container; then
+    container_skip "running the k3s installer (k3s needs a privileged container); CAs, config and checksum done"
+    run rm -f "$installer"
+    return 0
+  fi
   run env INSTALL_K3S_VERSION="$K3S_VERSION" INSTALL_K3S_EXEC=server sh "$installer"
   run rm -f "$installer"
   ((DRY_RUN)) && return 0
