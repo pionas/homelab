@@ -11,6 +11,7 @@ declare -A INSTALL_HINT=(
   [shellcheck]="sudo apt install shellcheck"
   [shfmt]="sudo apt install shfmt"
   [bats]="sudo apt install bats"
+  [yq]="mikefarah/yq from https://github.com/mikefarah/yq/releases (not the Debian yq package)"
 )
 
 usage() {
@@ -55,7 +56,7 @@ cmd_lint() {
 }
 
 cmd_test() {
-  need bats
+  need bats yq
   compgen -G 'tests/unit/*.bats' >/dev/null || die "no tests found in tests/unit"
   bats tests/unit
 }

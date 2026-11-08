@@ -1,0 +1,73 @@
+gitops_repo: git@github.com:pionas/homelab-gitops.git
+default_runtime: compose
+machines:
+  - name: edge
+    endpoint: 192.168.56.10
+    os: debian
+    runtime: compose
+    wg_ip: 10.100.10.100
+    wg_port: 51820
+    ssh_port: 22
+    services:
+      - node-agent
+      - proxy
+  - name: vps1
+    endpoint: 192.168.56.11
+    os: debian
+    runtime: compose
+    wg_ip: 10.100.10.101
+    wg_port: 51820
+    ssh_port: 22
+    services:
+      - node-agent
+      - db
+      - db-exporter
+      - log-shipper
+  - name: vps2
+    endpoint: 192.168.56.12
+    os: debian
+    runtime: compose
+    wg_ip: 10.100.10.102
+    wg_port: 51820
+    ssh_port: 22
+    services:
+      - node-agent
+      - cache
+      - vault
+  - name: vps3
+    endpoint: 192.168.56.13
+    os: debian
+    runtime: k3s
+    wg_ip: 10.100.10.103
+    wg_port: 443
+    ssh_port: 2222
+    services:
+      - node-agent
+      - gitops
+  - name: vps4
+    endpoint: 192.168.56.14
+    os: debian
+    runtime: k3s
+    wg_ip: 10.100.10.104
+    wg_port: 51820
+    ssh_port: 22
+    services:
+      - node-agent
+      - app-cluster
+  - name: vps5
+    endpoint: 192.168.56.15
+    os: ubuntu
+    runtime: k3s
+    wg_ip: 10.100.10.105
+    wg_port: 51820
+    ssh_port: 22
+    services:
+      - node-agent
+      - app-cluster
+admin_devices:
+  - name: laptop
+    type: linux
+    wg_ip: 10.100.10.200
+  - name: telefon
+    type: android
+    wg_ip: 10.100.10.201
