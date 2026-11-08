@@ -165,3 +165,45 @@ before() {
   step 01-base --force
   [[ $output == *apt-get* ]]
 }
+
+# --- 02 WireGuard -------------------------------------------------------------
+
+@test "02: installs wg0.conf (mode 600, content hidden) and enables wg-quick@wg0" {
+  step 02-wireguard
+  [ "$status" -eq 0 ]
+  [[ $output == *"[dry-run] write /etc/wireguard/wg0.conf (mode 600)"*"(content hidden)"* ]]
+  [[ $output != *PrivateKey* ]]
+  before 'write /etc/wireguard/wg0.conf' 'systemctl enable --now wg-quick@wg0'
+}
+
+@test "02: a running tunnel is updated with syncconf, not restarted" {
+  FAKE_ACTIVE=wg-quick@wg0 step 02-wireguard --force
+  [ "$status" -eq 0 ]
+  [[ $output == *"[dry-run] bash -c"*syncconf*wg0* ]]
+  [[ $output != *"enable --now"* && $output != *restart* ]]
+}
+
+@test "02: wg0.conf must listen on WG_PORT from node.env (443)" {
+  node_env compose 443 22 "" "" ""
+  step 02-wireguard
+  [ "$status" -eq 0 ]
+  sed -i 's/^ListenPort = .*/ListenPort = 51820/' "$PKG/node/wg0.conf"
+  step 02-wireguard
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"does not listen on WG_PORT=443"* ]]
+}
+
+@test "02: peer check only warns: missing handshakes or no interface do not fail the step" {
+  FAKE_HANDSHAKES="b:never c:never a:10" step 02-wireguard
+  [ "$status" -eq 0 ]
+  [[ $stderr == *"2 of 3 WireGuard peers have no handshake yet"* ]]
+  FAKE_WG_DOWN=1 step 02-wireguard
+  [ "$status" -eq 0 ]
+  [[ $stderr == *"wg0 is not up yet"* ]]
+}
+
+@test "02: all peers with a handshake" {
+  FAKE_HANDSHAKES="a:10 b:20" step 02-wireguard
+  [ "$status" -eq 0 ]
+  [[ $stderr == *"all 2 WireGuard peers have a handshake"* ]]
+}
