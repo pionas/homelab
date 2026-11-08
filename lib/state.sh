@@ -17,6 +17,8 @@ _STATE_FS=$'\x1f'
 _STATE_ROW=row
 # Names become directory and key file names, so they must be safe path components.
 _STATE_NAME_RE='^[a-z0-9]+(-[a-z0-9]+)*$'
+# A WireGuard key: 32 bytes in base64.
+STATE_WG_KEY_RE='^[A-Za-z0-9+/]{43}=$'
 
 declare -g _STATE=''
 
@@ -116,6 +118,15 @@ state_add_device() {
   N=$1 T=$2 IP=$ip _state_try '.admin_devices += [{"name": strenv(N), "type": strenv(T), "wg_ip": strenv(IP)}]'
 }
 
+# state_set_wg_key NAME PUBLIC_KEY — sets wg_public_key of a machine or admin device.
+state_set_wg_key() {
+  [[ $(N=$1 _state_yq '[(.machines[], .admin_devices[]) | select(.name == strenv(N))] | length') == 1 ]] || {
+    log_error "unknown machine or device: $1"
+    return 1
+  }
+  N=$1 K=$2 _state_try '((.machines[], .admin_devices[]) | select(.name == strenv(N)) | .wg_public_key) = strenv(K)'
+}
+
 _state_port_ok() { [[ $1 == '!!int' && $2 =~ ^[0-9]+$ ]] && ((10#$2 >= 1 && 10#$2 <= 65535)); }
 
 # _state_check WITH_CATALOG — logs every problem in _STATE; WITH_CATALOG=1 also checks service ids.
@@ -180,6 +191,14 @@ _state_check() {
     [[ -z ${ips[$ip]-} ]] || _state_err "duplicate wg_ip: $ip"
     ips[$ip]=1
   done < <(_state_yq -r '.admin_devices[] | ["'"$_STATE_ROW"'", .name // "", .type // "", .wg_ip // ""] | join("'"$_STATE_FS"'")' 2>/dev/null)
+
+  # wg_public_key is optional (set by lib/wg.sh); when present it must be a key.
+  local key
+  while IFS=$_STATE_FS read -r mark name key; do
+    [[ $mark == "$_STATE_ROW" ]] || continue
+    [[ $key =~ $STATE_WG_KEY_RE ]] || _state_err "'$name': wg_public_key is not a WireGuard key"
+  done < <(_state_yq -r '(.machines[], .admin_devices[]) | select(has("wg_public_key")) |
+    ["'"$_STATE_ROW"'", .name // "", .wg_public_key // ""] | join("'"$_STATE_FS"'")' 2>/dev/null)
   return "$rc"
 }
 
