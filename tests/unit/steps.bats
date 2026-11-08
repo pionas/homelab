@@ -544,3 +544,56 @@ k3s_package() {
   [ "$status" -eq 1 ]
   [[ $stderr == *"HOMELAB_K3S_DATA_DIR must be an absolute path"* ]]
 }
+
+# --- 12 node-exporter (catalog service) ----------------------------------------------
+
+# node_exporter_package — services/node-exporter/ as the wizard renders it (WG_IP substituted).
+node_exporter_package() {
+  local d=$PKG/node/services/node-exporter f
+  node_env compose 51820 22 "node-exporter" "9100" ""
+  mkdir -p "$d"
+  cp "$REPO_ROOT/catalog/node-exporter/install.sh" "$d/"
+  for f in docker-compose.yml node-exporter.yaml; do
+    WG_IP=10.100.10.101 envsubst '${WG_IP}' <"$REPO_ROOT/catalog/node-exporter/$f.tpl" >"$d/$f"
+  done
+}
+
+service() {
+  run --separate-stderr env PATH="$T/bin:$PATH" bash "$PKG/node/services/$1/install.sh" --dry-run "${@:2}"
+}
+
+@test "12: node-exporter on a compose machine runs under Docker, listening on the WG address only" {
+  node_exporter_package
+  printf 'COMPOSE_SERVICES="node-exporter"\n' >>"$PKG/node/node.env"
+  service node-exporter
+  [ "$status" -eq 0 ]
+  [[ $output == *"docker compose -f /opt/homelab/node-exporter/docker-compose.yml up -d"* ]]
+  grep -qF -- '--web.listen-address=10.100.10.101:9100' "$PKG/node/services/node-exporter/docker-compose.yml"
+  run ! grep -rq '0\.0\.0\.0' "$PKG/node/services/node-exporter"
+}
+
+@test "12: node-exporter on a k3s machine is a k3s manifest, no Docker" {
+  node_exporter_package
+  node_env k3s 51820 22 "node-exporter" "9100" ""
+  printf 'COMPOSE_SERVICES=""\n' >>"$PKG/node/node.env"
+  HOMELAB_K3S_DATA_DIR=$T/k3s service node-exporter
+  [ "$status" -eq 0 ]
+  [[ $output == *"install -m 600 $PKG/node/services/node-exporter/node-exporter.yaml $T/k3s/server/manifests/homelab-node-exporter.yaml"* ]]
+  [[ $output != *docker* ]]
+  grep -qF -- '--web.listen-address=10.100.10.101:9100' "$PKG/node/services/node-exporter/node-exporter.yaml"
+}
+
+@test "12: node-exporter refuses to guess on a compose machine without it in COMPOSE_SERVICES" {
+  node_exporter_package
+  service node-exporter
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"neither in COMPOSE_SERVICES nor on a k3s machine"* ]]
+}
+
+@test "12: node-exporter installer accepts no extra arguments" {
+  node_exporter_package
+  printf 'COMPOSE_SERVICES="node-exporter"\n' >>"$PKG/node/node.env"
+  service node-exporter '$(id)'
+  [ "$status" -eq 1 ]
+  [[ $output != *docker* ]]
+}

@@ -13,10 +13,8 @@ load_node_env
 K3S_VERSION=v1.36.5+k3s1
 K3S_INSTALLER_URL=https://raw.githubusercontent.com/k3s-io/k3s/v1.36.5%2Bk3s1/install.sh
 K3S_INSTALLER_SHA256=46177d4c99440b4c0311b67233823a8e8a2fc09693f6c89af1a7161e152fbfad
-K3S_DATA_DIR=${HOMELAB_K3S_DATA_DIR:-/var/lib/rancher/k3s}
-[[ $K3S_DATA_DIR == /* && $K3S_DATA_DIR != *..* ]] || die "HOMELAB_K3S_DATA_DIR must be an absolute path without .."
-K3S_TLS=$K3S_DATA_DIR/server/tls
-K3S_MANIFESTS=$K3S_DATA_DIR/server/manifests
+K3S_TLS=$HOMELAB_K3S_DATA_DIR/server/tls
+K3S_MANIFESTS=$HOMELAB_K3S_MANIFESTS
 K3S_CONFIG=/etc/rancher/k3s/config.yaml
 K3S_POD_NET=10.42.0.0/16
 K3S_SERVICE_NET=10.43.0.0/16

@@ -219,6 +219,10 @@ ssh_session() {
 }
 
 HOMELAB_OS_RELEASE=${HOMELAB_OS_RELEASE:-/etc/os-release}
+# k3s data directory; k3s applies every manifest in its server/manifests on its own.
+HOMELAB_K3S_DATA_DIR=${HOMELAB_K3S_DATA_DIR:-/var/lib/rancher/k3s}
+# shellcheck disable=SC2034 # used by step 11 and k3s service installers
+HOMELAB_K3S_MANIFESTS=$HOMELAB_K3S_DATA_DIR/server/manifests
 
 # os_release_value KEY — one field of os-release (ID, VERSION_CODENAME); the file is read, not
 # sourced, and only plain values [a-z0-9._-] are returned (empty otherwise).
@@ -261,5 +265,8 @@ verify_gpg_fingerprint() {
 check_flags() {
   [[ $DRY_RUN =~ ^[01]$ && $FORCE =~ ^[01]$ ]] || die "DRY_RUN and FORCE must be 0 or 1"
   [[ -n ${_LOG_LEVELS[$LOG_LEVEL]+set} ]] || die "LOG_LEVEL must be debug, info, warn or error"
-  [[ $HOMELAB_STATE_DIR == /* && $HOMELAB_STATE_DIR != *..* ]] || die "HOMELAB_STATE_DIR must be an absolute path without .."
+  local d
+  for d in HOMELAB_STATE_DIR HOMELAB_K3S_DATA_DIR; do
+    [[ ${!d} == /* && ${!d} != *..* ]] || die "$d must be an absolute path without .."
+  done
 }
