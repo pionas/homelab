@@ -41,5 +41,7 @@ zbindowana na adres WG albo reguła UFW jest za szeroka. Te same porty **z** sie
 
 `scripts/dev.sh container` uruchamia kroki naprawdę w kontenerze Debian z systemd
 (`tests/container/`), trzy razy: instalacja, drugie uruchomienie (wszystkie kroki pominięte),
-`--force`. Czego nie da się zrobić w kontenerze (hostname, sysctl, start dockerd i k3s), jest
+`--force`. Wymaga Dockera w trybie **rootless** (kontener jest `--privileged`, ale tylko w przestrzeni nazw
+użytkownika — nie zmieni zegara, sysctli ani modułów jądra laptopa); z Dockerem z rootem skrypt odmawia.
+Czego nie da się zrobić w kontenerze (hostname, sysctl, start dockerd i k3s), jest
 pomijane z komunikatem `skipped in container: …` — to sprawdza się dopiero na VM.

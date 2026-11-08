@@ -3,10 +3,11 @@
 # machine: a package for one machine (compose, then k3s) is installed three times — first run,
 # second run (every step must be skipped as done), --force (every step runs again).
 #
-# The container is NOT --privileged: a privileged container could change this machine's clock
-# (chrony), kernel-wide sysctls and kernel modules. It gets NET_ADMIN (iptables, UFW and WireGuard
-# act only in the container's own network namespace) and SYS_ADMIN with a private cgroup
-# namespace for systemd; no host directory and no Docker socket is mounted.
+# Only with ROOTLESS Docker: there the container's root is this user mapped into a user namespace,
+# so even --privileged gives capabilities inside that namespace only — it cannot set the host clock,
+# kernel-wide sysctls or load kernel modules. With rootful Docker --privileged could do all of that,
+# so the script refuses to run. No host directory and no Docker socket is mounted; the container
+# has its own network namespace (UFW and WireGuard act only there) and a private cgroup namespace.
 set -Eeuo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -19,8 +20,7 @@ IMAGE=homelab-test:latest
 BOOT_TIMEOUT=60
 # The admin session comes over WireGuard, so step 03-ssh can prove the admin path and run.
 ADMIN_SSH_CONNECTION="10.100.10.200 50000 10.100.10.100 22"
-RUNTIME_OPTS=(--cgroupns=private --tmpfs /run --tmpfs /run/lock
-  --cap-add NET_ADMIN --cap-add SYS_ADMIN --security-opt apparmor=unconfined)
+RUNTIME_OPTS=(--privileged --cgroupns=private --tmpfs /run --tmpfs /run/lock)
 
 WORK=$(mktemp -d)
 cleanup() {
@@ -90,6 +90,10 @@ scenario() {
   log_info "container test $rt OK (first run, idempotent second run, --force)"
 }
 
+if ! docker info --format '{{json .SecurityOptions}}' | grep -q 'name=rootless'; then
+  die "Docker is not rootless: a --privileged test container could change this machine (clock," \
+    "sysctls, kernel modules). Use rootless Docker (dockerd-rootless-setuptool.sh install)."
+fi
 docker build -q -t "$IMAGE" tests/container >/dev/null
 scenario compose
 scenario k3s

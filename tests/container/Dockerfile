@@ -1,5 +1,5 @@
 # Disposable "machine" for the install steps: Debian with systemd as PID 1.
-# Runs WITHOUT --privileged (see run.sh): units that would reach the host kernel are masked.
+# Run by run.sh under rootless Docker only. Kernel- and hardware-wide units are masked anyway.
 FROM debian:13
 ENV container=docker DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
