@@ -76,8 +76,10 @@ _catalog_validate() {
   if ! [[ ${_CATALOG["$id,PRIORITY"]} =~ ^[0-9]{2}$ ]] || ((10#${_CATALOG["$id,PRIORITY"]} < 12)); then
     _catalog_err "PRIORITY must be a two-digit number 12-99"
   fi
-  if [[ $id == *-exporter && ${_CATALOG["$id,PRIORITY"]} != 39 ]]; then
-    _catalog_err "exporters must have PRIORITY=39 (after data services, before edge)"
+  # Decision "exporter priorities": auto-added exporters follow their data service; node-exporter
+  # (SCOPE=always) is a host service with its own priority 12.
+  if [[ $id == *-exporter && ${_CATALOG["$id,SCOPE"]} == auto && ${_CATALOG["$id,PRIORITY"]} != 39 ]]; then
+    _catalog_err "auto exporters must have PRIORITY=39 (after data services, before edge)"
   fi
   for k in PORTS PUBLIC_PORTS; do
     for word in ${_CATALOG["$id,$k"]}; do
