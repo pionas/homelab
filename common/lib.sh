@@ -67,10 +67,11 @@ step_mark_done() {
   touch "$(_step_marker "$1")"
 }
 
-# step NN FUNCTION — runs FUNCTION once; a marker skips it later unless --force.
+# step ID FUNCTION — runs FUNCTION once; a marker skips it later unless --force.
+# ID: NN for common/ steps, NN-id for services (e.g. 30-postgresql).
 step() {
   local id=$1 fn=$2
-  [[ $id =~ ^[0-9]{2}$ ]] || die "step id must be two digits, got: $id"
+  [[ $id =~ ^[0-9]{2}(-[a-z0-9]+(-[a-z0-9]+)*)?$ ]] || die "step id must be NN or NN-id, got: $id"
   if step_is_done "$id" && ! ((FORCE)); then
     log_info "step $id ($fn) already done, skipping (use --force to rerun)"
     return 0

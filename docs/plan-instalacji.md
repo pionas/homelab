@@ -24,6 +24,9 @@ Dokument uzupełnia „Dokumentację Architektury Rozproszonego Homelaba”. Opi
 | CA | **Generowane przez kreator** (`step certificate create`) — root + intermediate; intermediate do paczki maszyny ze step-ca, certyfikat główny do wszystkich paczek. |
 | Adresacja WG | Edge `10.100.10.100`, kolejne maszyny `.101`–`.199` (inkrementacja); urządzenia administratora `.200`–`.254`. Kreator waliduje wyczerpanie zakresów. Adres DNS w konfiguracjach WG = adres WG maszyny z CoreDNS (wyliczany, nie stały). |
 | Kroki systemowe | Kroki 01–04, Docker (10) i k3s (11) są w `common/`, **nie w katalogu usług**. Docker i k3s dokłada logika środowiska maszyny. Katalog zaczyna się od node_exporter (12). |
+| Porty publiczne | Tylko usługi z `PLACEMENT=edge` mogą mieć `PUBLIC_PORTS` (bindowane publicznie, np. Traefik 80/443). Wszystkie inne porty (`PORTS`) — wyłącznie na adresie WG. |
+| Priorytety eksporterów | Wszystkie eksportery (`auto`) mają priorytet **39** — po warstwie danych (30–35), przed edge (40). |
+| Znaczniki kroków | Kroki `common/` — `done/NN`; kroki usług — `done/NN-id` (np. `30-postgresql`), więc usługi o tym samym priorytecie się nie zderzają. Wyjątek w `common/`: `03-ssh`. |
 | Konta tylko do odczytu | Jedna nazwa roli: **`VIEWER`** (panele i eksportery, osobne konta per usługa). |
 | Język kreatora | **Bash** (`whiptail`, fallback na `read`). |
 
@@ -118,6 +121,7 @@ REQUIRES=""             # usługi, które muszą istnieć w homelabie
 SECRETS="ROOT DEFAULT VIEWER"
 USES_SECRETS=""         # sekrety innych usług, np. "REDIS:VIEWER"
 PORTS="5432"            # bindowane na adres WG
+PUBLIC_PORTS=""         # bindowane publicznie; dozwolone tylko przy PLACEMENT=edge
 AUTO_ADD="postgres-exporter"
 ```
 
@@ -131,13 +135,13 @@ AUTO_ADD="postgres-exporter"
 | 12 | node_exporter | always | compose, k3s | — | |
 | 20 | DNS wewnętrzny (CoreDNS) | single | compose, k3s | — | wymagany przy 2+ maszynach |
 | 21 | step-ca | single | compose, k3s | `STEPCA_DEFAULT` (provisioner) | wymagany; CA z kreatora |
-| 30 | PostgreSQL | single | compose | ROOT, DEFAULT, VIEWER | + postgres-exporter (auto, konto VIEWER z `pg_monitor`) |
-| 31 | MariaDB | single | compose | ROOT, DEFAULT, VIEWER | + mysqld-exporter (auto) |
+| 30 | PostgreSQL | single | compose | ROOT, DEFAULT, VIEWER | + postgres-exporter (auto, 39, konto VIEWER z `pg_monitor`) |
+| 31 | MariaDB | single | compose | ROOT, DEFAULT, VIEWER | + mysqld-exporter (auto, 39) |
 | 32 | MinIO | single | compose | ROOT | metryki natywne |
-| 33 | Redis | single | compose | DEFAULT, VIEWER | ACL; + redis-exporter (auto) |
+| 33 | Redis | single | compose | DEFAULT, VIEWER | ACL; + redis-exporter (auto, 39) |
 | 34 | Redpanda | single | compose | ROOT | SASL, `advertise_kafka_addr` = adres WG; Schema Registry wbudowane |
 | 35 | Typesense | single | compose | ROOT (API key) | |
-| 40 | Traefik standalone | single, `PLACEMENT=edge` | compose | — | ACME → step-ca |
+| 40 | Traefik standalone | single, `PLACEMENT=edge` | compose | — | ACME → step-ca; `PUBLIC_PORTS="80 443"` |
 | 45 | OpenBao | single | compose | ROOT (token), klucz unseal | wymagany przy ArgoCD; instalator wgrywa wszystkie sekrety; auto-unseal z pliku (systemd) |
 | 50 | ArgoCD | single | k3s | ROOT (admin) | `REQUIRES=openbao`; + aplikacja główna app-of-apps, Secrety klastrów z kreatora, External Secrets Operator jako pierwsza aplikacja |
 | 60 | Klaster aplikacyjny | multi | k3s | — | rejestracja w ArgoCD z kreatora; wymaga ArgoCD |
@@ -182,7 +186,7 @@ Kolejność maszyn wynika z najniższego priorytetu ich usług: maszyna z DNS/st
 
 ## 7. Kroki instalacji (wykonywane przez `install.sh`)
 
-Kroki idempotentne (znacznik `/var/lib/homelab/done/NN`, flaga `--force`).
+Kroki idempotentne (znacznik `/var/lib/homelab/done/NN` dla `common/`, `done/NN-id` dla usług, flaga `--force`).
 
 **00 – Preflight** — system (Debian/Ubuntu), root, sieć, wczytanie `node.env`
 **01 – System bazowy** — update/upgrade, pakiety, chrony, hostname, strefa czasowa, użytkownik admin + klucz SSH, hardening sshd, unattended-upgrades, fail2ban, `ip_forward`
