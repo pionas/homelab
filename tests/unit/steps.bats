@@ -98,3 +98,70 @@ before() {
   [[ $stderr == *"SSH session from 203.0.113.5 to port 22"* ]]
   [[ $stderr == *"sshd moves to port 2222 in step 01"* ]]
 }
+
+# --- 01 base system -----------------------------------------------------------
+
+@test "01: packages, chrony, hostname, timezone, unattended-upgrades without reboot, fail2ban, ip_forward" {
+  step 01-base
+  [ "$status" -eq 0 ]
+  [[ $output == *"apt-get install -y chrony fail2ban unattended-upgrades wireguard"* ]]
+  [[ $output == *"[dry-run] hostnamectl set-hostname vps1"* ]]
+  [[ $output == *"[dry-run] timedatectl set-timezone Etc/UTC"* ]]
+  [[ $output == *'Unattended-Upgrade::Automatic-Reboot "false";'* ]]
+  [[ $output == *"ignoreip = 127.0.0.1/8 ::1 10.100.10.0/24"* ]]
+  [[ $output == *"net.ipv4.ip_forward = 1"* ]]
+}
+
+@test "01: user -> verified authorized_keys -> sudo -> sshd hardening -> sshd -t -> reload" {
+  step 01-base
+  [ "$status" -eq 0 ]
+  before 'useradd --create-home' 'install -m 600 -o admin -g admin .*authorized_keys'
+  before 'authorized_keys' 'write /etc/sudoers.d/90-homelab-admin'
+  before 'visudo -cf' 'write /etc/ssh/sshd_config.d/10-homelab.conf'
+  before 'PasswordAuthentication no' '\[dry-run\] sshd -t'
+  before '\[dry-run\] sshd -t' 'systemctl reload ssh'
+  [[ $output != *"restart ssh"* ]]
+  [[ $output == *"admin ALL=(ALL) NOPASSWD:ALL"* ]]
+}
+
+@test "01: no valid admin key stops before anything changes" {
+  echo 'not a key' >"$T/authorized_keys"
+  step 01-base
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"no valid SSH public key in $T/authorized_keys"* ]]
+  [[ $output != *"sshd_config.d"* && $output != *useradd* ]]
+}
+
+@test "01: existing admin user is reused" {
+  FAKE_ADMIN_EXISTS=1 step 01-base
+  [ "$status" -eq 0 ]
+  [[ $output != *useradd* ]]
+  [[ $stderr == *"user admin exists"* ]]
+}
+
+@test "01: SSH_PORT from node.env goes to sshd and fail2ban (2222), nothing hard-coded" {
+  node_env compose 443 2222 "" "" ""
+  step 01-base
+  [ "$status" -eq 0 ]
+  [[ $output == *"[dry-run]   Port 2222"* ]]
+  [[ $output == *"[dry-run]   port = 2222"* ]]
+  [[ $output != *"Port 22"$'\n'* ]]
+  [[ $output != *"port = 22"$'\n'* ]]
+}
+
+@test "01: socket-activated sshd (Ubuntu) gets daemon-reload + socket restart instead of reload" {
+  FAKE_ENABLED=ssh.socket step 01-base
+  [ "$status" -eq 0 ]
+  before '\[dry-run\] sshd -t' 'systemctl daemon-reload'
+  [[ $output == *"systemctl restart ssh.socket"* ]]
+  [[ $output != *"systemctl reload ssh"* ]]
+}
+
+@test "01: a done step is skipped; --force reruns it" {
+  mkdir -p "$T/state/done" && touch "$T/state/done/01"
+  step 01-base
+  [ "$status" -eq 0 ]
+  [[ $output != *apt-get* ]]
+  step 01-base --force
+  [[ $output == *apt-get* ]]
+}
