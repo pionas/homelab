@@ -1,0 +1,14 @@
+gitops_repo: git@github.com:pionas/homelab-gitops.git
+default_runtime: compose
+machines:
+  - name: edge
+    endpoint: 192.168.56.10
+    os: debian
+    runtime: compose
+    wg_ip: 10.100.10.100
+    wg_port: 51820
+    ssh_port: 22
+    services:
+      - node-agent
+      - proxy
+admin_devices: []
