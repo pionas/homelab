@@ -19,6 +19,11 @@
 600 ca/root_ca.crt
 600 ca/root_ca.key
 700 common
+775 common/00-preflight.sh
+775 common/01-base.sh
+775 common/02-wireguard.sh
+775 common/03-ufw.sh
+775 common/04-ca-trust.sh
 664 common/lib.sh
 600 common/root_ca.crt
 700 edge

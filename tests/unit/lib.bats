@@ -118,19 +118,19 @@ setup() {
 
 @test "load_env exports variables to child processes" {
   printf 'GREETING="hi there"\n' >"$BATS_TEST_TMPDIR/node.env"
-  run in_lib "load_env '$BATS_TEST_TMPDIR/node.env' GREETING; bash -c 'echo \"\$GREETING\"'"
+  run in_lib "load_env '$BATS_TEST_TMPDIR/node.env' GREETING GREETING; bash -c 'echo \"\$GREETING\"'"
   [ "$output" = "hi there" ]
 }
 
 @test "load_env fails for a missing file" {
-  run in_lib "load_env '$BATS_TEST_TMPDIR/nope.env'"
+  run in_lib "load_env '$BATS_TEST_TMPDIR/nope.env' A"
   [ "$status" -eq 1 ]
   [[ $output == *"not readable"* ]]
 }
 
 @test "load_env fails when a required variable is missing" {
   printf 'A=1\n' >"$BATS_TEST_TMPDIR/node.env"
-  run in_lib "load_env '$BATS_TEST_TMPDIR/node.env' A B"
+  run in_lib "load_env '$BATS_TEST_TMPDIR/node.env' 'A|B' A B"
   [ "$status" -eq 1 ]
   [[ $output == *"required variable B"* ]]
 }
@@ -138,7 +138,7 @@ setup() {
 @test "load_env warns when a secrets file is readable by others" {
   printf 'X=1\n' >"$BATS_TEST_TMPDIR/secrets.env"
   chmod 644 "$BATS_TEST_TMPDIR/secrets.env"
-  run in_lib "load_env '$BATS_TEST_TMPDIR/secrets.env'"
+  run in_lib "load_env '$BATS_TEST_TMPDIR/secrets.env' X"
   [ "$status" -eq 0 ]
   [[ $output == *"mode 644, expected 600"* ]]
 }
@@ -146,6 +146,70 @@ setup() {
 @test "load_env does not warn for a secrets file with mode 600" {
   printf 'X=1\n' >"$BATS_TEST_TMPDIR/secrets.env"
   chmod 600 "$BATS_TEST_TMPDIR/secrets.env"
-  run in_lib "load_env '$BATS_TEST_TMPDIR/secrets.env'"
+  run in_lib "load_env '$BATS_TEST_TMPDIR/secrets.env' X"
   [ -z "$output" ]
+}
+
+@test "write_file writes stdin atomically with the given mode" {
+  run in_lib "printf 'a\nb\n' | write_file '$BATS_TEST_TMPDIR/d/f' 640"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$BATS_TEST_TMPDIR/d/f")" = $'a\nb' ]
+  [ "$(stat -c %a "$BATS_TEST_TMPDIR/d/f")" = 640 ]
+  [ -z "$(find "$BATS_TEST_TMPDIR/d" -name 'f.*')" ]
+}
+
+@test "write_file in dry-run prints path and content, hides mode-600 content, writes nothing" {
+  run in_lib "DRY_RUN=1; echo 'Port 2222' | write_file '$BATS_TEST_TMPDIR/x.conf'; echo secret | write_file '$BATS_TEST_TMPDIR/k' 600"
+  [ "$status" -eq 0 ]
+  [[ $output == *"[dry-run] write $BATS_TEST_TMPDIR/x.conf (mode 644)"*"[dry-run]   Port 2222"* ]]
+  [[ $output == *"(content hidden)"* && $output != *secret* ]]
+  [ ! -e "$BATS_TEST_TMPDIR/x.conf" ]
+}
+
+@test "load_node_env needs HOMELAB_NODE_DIR and valid ports" {
+  run in_lib 'unset HOMELAB_NODE_DIR; load_node_env'
+  [ "$status" -eq 1 ]
+  [[ $output == *"HOMELAB_NODE_DIR is not set"* ]]
+  mkdir -p "$BATS_TEST_TMPDIR/n"
+  printf 'NODE_NAME=a\nWG_IP=10.100.10.101\nWG_PORT=70000\nSSH_PORT=22\nRUNTIME=compose\nOS=debian\n' >"$BATS_TEST_TMPDIR/n/node.env"
+  run in_lib "HOMELAB_NODE_DIR='$BATS_TEST_TMPDIR/n'; load_node_env"
+  [ "$status" -eq 1 ]
+  [[ $output == *"WG_PORT must be a port 1-65535, got: 70000"* ]]
+}
+
+@test "load_env never executes the file: command substitution, backticks and ; are rejected" {
+  local f="$BATS_TEST_TMPDIR/evil.env"
+  for line in 'A=$(touch PWNED)' 'A="`touch PWNED`"' 'A=1; touch PWNED' 'A=1 touch PWNED' 'touch PWNED'; do
+    printf '%s\n' "$line" >"$f"
+    run in_lib "cd '$BATS_TEST_TMPDIR'; load_env '$f' A"
+    [ "$status" -eq 1 ]
+    [[ $output == *"evil.env:1: expected KEY=value"* ]]
+    [ ! -e "$BATS_TEST_TMPDIR/PWNED" ]
+  done
+}
+
+@test "load_env rejects keys outside the allow list (PATH, LD_PRELOAD) and duplicates" {
+  printf 'A=1\nPATH=/tmp/evil\nLD_PRELOAD=/tmp/x.so\nA=2\n' >"$BATS_TEST_TMPDIR/e.env"
+  run in_lib "load_env '$BATS_TEST_TMPDIR/e.env' A"
+  [ "$status" -eq 1 ]
+  [[ $output == *"key PATH is not allowed"* && $output == *"key LD_PRELOAD is not allowed"* ]]
+  [[ $output == *"duplicate key A"* ]]
+}
+
+@test "parse_common_args rejects positional arguments and non-boolean DRY_RUN/FORCE" {
+  run in_lib 'parse_common_args --dry-run extra'
+  [ "$status" -eq 1 ]
+  [[ $output == *"unknown argument: extra"* ]]
+  run in_lib 'DRY_RUN="1; id"; parse_common_args'
+  [ "$status" -eq 1 ]
+  [[ $output == *"DRY_RUN and FORCE must be 0 or 1"* ]]
+}
+
+@test "ssh_session accepts only client_ip client_port server_ip server_port" {
+  run in_lib 'SSH_CONNECTION="10.100.10.200 5000 10.100.10.101 2222"; ssh_session; echo "$SSH_CLIENT_IP $SSH_SERVER_PORT"'
+  [ "$output" = "10.100.10.200 2222" ]
+  run in_lib 'SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22;id"; ssh_session; echo "[$SSH_CLIENT_IP][$SSH_SERVER_PORT]"'
+  [[ $output == *"ignoring malformed SSH_CONNECTION"*"[][]"* ]]
+  run in_lib 'SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22 extra"; ssh_session; echo "[$SSH_SERVER_PORT]"'
+  [[ $output == *"[]"* ]]
 }

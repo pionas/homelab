@@ -1,4 +1,9 @@
 common/
+common/00-preflight.sh
+common/01-base.sh
+common/02-wireguard.sh
+common/03-ufw.sh
+common/04-ca-trust.sh
 common/lib.sh
 common/root_ca.crt
 vps5/
