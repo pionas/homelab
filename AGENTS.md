@@ -28,9 +28,9 @@ out/                   # wynik kreatora — NIGDY w Git
 - Każdy skrypt: `#!/usr/bin/env bash` + `set -Eeuo pipefail`.
 - Kod musi przechodzić `shellcheck` bez ostrzeżeń i być sformatowany `shfmt -i 2 -ci`.
 - Logika w funkcjach w `lib/`; `wizard.sh` tylko je składa. Funkcje mają być testowalne bez roota i bez interakcji (UI `whiptail` / `read` oddzielone od logiki).
-- Kroki instalacji są idempotentne: znacznik `/var/lib/homelab/done/NN`, flaga `--force`.
+- Kroki instalacji są idempotentne: znacznik `/var/lib/homelab/done/NN` (`common/`) lub `done/NN-id` (usługi, np. `30-postgresql`), flaga `--force`.
 - Komendy zmieniające system wywołuj przez wrapper `run` z `common/lib.sh`, który obsługuje `--dry-run` (wypisuje komendę zamiast ją wykonać).
-- Porty usług zawsze bindowane na adres WireGuard, nigdy na `0.0.0.0`.
+- Porty usług (`PORTS`) zawsze bindowane na adres WireGuard, nigdy na `0.0.0.0`. Jedyny wyjątek: `PUBLIC_PORTS` usług z `PLACEMENT=edge` (Traefik 80/443).
 - Sekrety: konwencja `{USLUGA}_ROOT_*`, `{USLUGA}_DEFAULT_*`, `{USLUGA}_VIEWER_*`. Żadnych sekretów, kluczy ani `out/` w Git.
 ## Testowanie — zasady bezpieczeństwa
  

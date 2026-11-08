@@ -6,7 +6,7 @@
 # shellcheck source=common/lib.sh
 source "${BASH_SOURCE[0]%/*}/../common/lib.sh"
 
-_CATALOG_KEYS=(ID NAME SCOPE RUNTIMES PLACEMENT PRIORITY REQUIRES SECRETS USES_SECRETS PORTS AUTO_ADD)
+_CATALOG_KEYS=(ID NAME SCOPE RUNTIMES PLACEMENT PRIORITY REQUIRES SECRETS USES_SECRETS PORTS PUBLIC_PORTS AUTO_ADD)
 _CATALOG_REQUIRED=(ID NAME SCOPE RUNTIMES PRIORITY)
 # KEY=value or KEY="value"; no $, backticks or backslashes, so nothing can expand.
 # shellcheck disable=SC2016 # literal regex, nothing to expand
@@ -74,11 +74,20 @@ _catalog_validate() {
   if ! [[ ${_CATALOG["$id,PRIORITY"]} =~ ^[0-9]{2}$ ]] || ((10#${_CATALOG["$id,PRIORITY"]} < 12)); then
     _catalog_err "PRIORITY must be a two-digit number 12-99"
   fi
-  for word in ${_CATALOG["$id,PORTS"]}; do
-    if ! [[ $word =~ ^[0-9]+$ ]] || ((word < 1 || word > 65535)); then
-      _catalog_err "PORTS: invalid port $word"
-    fi
+  if [[ $id == *-exporter && ${_CATALOG["$id,PRIORITY"]} != 39 ]]; then
+    _catalog_err "exporters must have PRIORITY=39 (after data services, before edge)"
+  fi
+  for k in PORTS PUBLIC_PORTS; do
+    for word in ${_CATALOG["$id,$k"]}; do
+      if ! [[ $word =~ ^[0-9]+$ ]] || ((word < 1 || word > 65535)); then
+        _catalog_err "$k: invalid port $word"
+      fi
+    done
   done
+  # Only the edge is exposed to the internet; everything else binds to the WG address.
+  if [[ -n ${_CATALOG["$id,PUBLIC_PORTS"]} && ${_CATALOG["$id,PLACEMENT"]} != edge ]]; then
+    _catalog_err "PUBLIC_PORTS is allowed only with PLACEMENT=edge"
+  fi
   for word in ${_CATALOG["$id,SECRETS"]}; do
     [[ $word =~ ^[A-Z][A-Z0-9_]*$ ]] || _catalog_err "SECRETS: invalid role $word"
   done

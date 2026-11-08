@@ -99,6 +99,21 @@ on_fixture() {
   expect_invalid "invalid port 70000"
 }
 
+@test "rejects an invalid public port" {
+  set_key proxy PUBLIC_PORTS 0
+  expect_invalid "PUBLIC_PORTS: invalid port 0"
+}
+
+@test "rejects PUBLIC_PORTS on a service without PLACEMENT=edge" {
+  set_key cache PUBLIC_PORTS 8080
+  expect_invalid "PUBLIC_PORTS is allowed only with PLACEMENT=edge"
+}
+
+@test "rejects an exporter with PRIORITY other than 39" {
+  set_key db-exporter PRIORITY 31
+  expect_invalid "exporters must have PRIORITY=39"
+}
+
 @test "rejects an invalid secret role" {
   set_key cache SECRETS viewer
   expect_invalid "SECRETS: invalid role viewer"

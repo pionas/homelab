@@ -54,10 +54,19 @@ setup() {
   [ ! -e "$MARKER" ]
 }
 
-@test "step rejects an id that is not two digits" {
-  run in_lib 'f() { :; }; step 5 f'
-  [ "$status" -eq 1 ]
-  [[ $output == *"two digits"* ]]
+@test "step accepts a service id NN-id and writes its marker" {
+  run in_lib 'f() { :; }; step 30-postgres-exporter f'
+  [ "$status" -eq 0 ]
+  [ -e "$HOMELAB_STATE_DIR/done/30-postgres-exporter" ]
+}
+
+@test "step rejects an id that is not NN or NN-id" {
+  local id
+  for id in 5 30_db 30-DB 30- 30-a/b; do
+    run in_lib "f() { :; }; step '$id' f"
+    [ "$status" -eq 1 ]
+    [[ $output == *"must be NN or NN-id"* ]]
+  done
 }
 
 @test "logs go to stderr, not stdout" {
