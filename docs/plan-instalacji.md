@@ -25,6 +25,8 @@ Dokument uzupełnia „Dokumentację Architektury Rozproszonego Homelaba”. Opi
 | Adresacja WG | Edge `10.100.10.100`, kolejne maszyny `.101`–`.199` (inkrementacja); urządzenia administratora `.200`–`.254`. Kreator waliduje wyczerpanie zakresów. Adres DNS w konfiguracjach WG = adres WG maszyny z CoreDNS (wyliczany, nie stały). |
 | Kroki systemowe | Kroki 01–04, Docker (10) i k3s (11) są w `common/`, **nie w katalogu usług**. Docker i k3s dokłada logika środowiska maszyny. Katalog zaczyna się od node_exporter (12). |
 | Porty publiczne | Tylko usługi z `PLACEMENT=edge` mogą mieć `PUBLIC_PORTS` (bindowane publicznie, np. Traefik 80/443). Wszystkie inne porty (`PORTS`) — wyłącznie na adresie WG. |
+| Port WireGuard | Per maszyna (`wg_port` w stanie). Port podany dla edge (domyślnie `51820`) jest domyślny dla kolejnych maszyn, każdą można zmienić — w homelabie dostępne są wszystkie porty, produkcyjny VPS może udostępniać tylko kilka albo jeden. `Endpoint` peera = jego adres osiągalności + jego `wg_port`. |
+| Port SSH | Per maszyna (`ssh_port` w stanie), domyślnie `22`, zmieniany w odpowiedziach kreatora. Używany w `sshd_config` (krok 01) i UFW (krok 03). |
 | Priorytety eksporterów | Wszystkie eksportery (`auto`) mają priorytet **39** — po warstwie danych (30–35), przed edge (40). |
 | Znaczniki kroków | Kroki `common/` — `done/NN`; kroki usług — `done/NN-id` (np. `30-postgresql`), więc usługi o tym samym priorytecie się nie zderzają. Wyjątek w `common/`: `03-ssh`. |
 | Konta tylko do odczytu | Jedna nazwa roli: **`VIEWER`** (panele i eksportery, osobne konta per usługa). |
@@ -39,6 +41,7 @@ Uruchamiany na Linuksie — lokalnie lub bezpośrednio na maszynie. Zbiera odpow
 2. **Urządzenia administratora** — nazwa i typ (Windows / iOS / Android / Linux) → adresy od `.200`, klucze WG.
 3. **Iteracja po maszynach, zaczynając od edge.** Dla każdej:
    * nazwa (podpowiedź `edge`, `vps1`…), adres osiągalności (IP VirtualBox / publiczne — `Endpoint` WireGuarda), adres WG nadawany automatycznie,
+   * port WireGuarda (podpowiedź: port edge, na edge `51820`) i port SSH (podpowiedź `22`) — oba do zmiany,
    * system (domyślnie Debian),
    * środowisko: k3s / docker-compose (jeśli maszyna ma uruchamiać aplikacje z ArgoCD → wymuszone k3s),
    * lista usług:
@@ -189,9 +192,9 @@ Kolejność maszyn wynika z najniższego priorytetu ich usług: maszyna z DNS/st
 Kroki idempotentne (znacznik `/var/lib/homelab/done/NN` dla `common/`, `done/NN-id` dla usług, flaga `--force`).
 
 **00 – Preflight** — system (Debian/Ubuntu), root, sieć, wczytanie `node.env`
-**01 – System bazowy** — update/upgrade, pakiety, chrony, hostname, strefa czasowa, użytkownik admin + klucz SSH, hardening sshd, unattended-upgrades, fail2ban, `ip_forward`
+**01 – System bazowy** — update/upgrade, pakiety, chrony, hostname, strefa czasowa, użytkownik admin + klucz SSH, hardening sshd (port `SSH_PORT`), unattended-upgrades, fail2ban, `ip_forward`
 **02 – WireGuard** — `wg0.conf`, `wg-quick@wg0`, test peerów
-**03 – Firewall (UFW)** — deny incoming, port WG; SSH publiczny → po teście tunelu tylko `10.100.10.0/24`; porty roli (80/443 tylko edge); na maszynach z k3s dodatkowo `10.42.0.0/16`
+**03 – Firewall (UFW)** — deny incoming, port WG (`WG_PORT`/udp), SSH (`SSH_PORT`/tcp); SSH publiczny → po teście tunelu tylko `10.100.10.0/24`; porty roli (80/443 tylko edge); na maszynach z k3s dodatkowo `10.42.0.0/16`
 **04 – Zaufanie do CA** — `root_ca.crt` z paczki
 **10 – Docker** / **11 – k3s** (CA z kreatora umieszczone przed pierwszym startem, `--node-ip` / `--advertise-address` na adres WG, manifest RBAC dla użytkownika `argocd`)
 **12 – Monitoring hosta** — node_exporter
