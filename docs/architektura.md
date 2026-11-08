@@ -54,7 +54,7 @@ Adresacja:
 Kreator waliduje wyczerpanie zakresów.
 
 ### 3.2 Firewall (UFW)
-* **VPS-Edge:** jedyna maszyna wystawiona na świat (porty 80/443 oraz port WireGuarda).
+* **VPS-Edge:** jedyna maszyna wystawiona na świat (porty 80/443 oraz port WireGuarda — konfigurowalny per maszyna).
 * **Pozostałe maszyny:** publicznie otwarty wyłącznie port WireGuarda. Bazy, Redpanda, Redis i panele dostępne tylko z `10.100.10.0/24`.
 * **SSH:** po zestawieniu tunelu dostępny tylko z `10.100.10.0/24`.
 * **Docker + UFW:** Docker przy publikowaniu portów dodaje własne reguły iptables z pominięciem UFW — porty publikowane z bindowaniem na adres WireGuard, np. `"10.100.10.105:5432:5432"`. Weryfikacja z zewnątrz: `nmap`.
