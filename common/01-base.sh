@@ -14,6 +14,11 @@ TIMEZONE=${HOMELAB_TIMEZONE:-Etc/UTC}
 SSHD_DROPIN=/etc/ssh/sshd_config.d/10-homelab.conf
 SUDOERS_FILE=/etc/sudoers.d/90-homelab-admin
 
+# Both end up in commands and files run or read as root: plain values only.
+[[ $ADMIN_USER =~ ^[a-z_][a-z0-9_-]{0,31}$ && $ADMIN_USER != root ]] ||
+  die "HOMELAB_ADMIN_USER must be a lowercase user name other than root, got: $ADMIN_USER"
+[[ $TIMEZONE =~ ^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*$ ]] || die "HOMELAB_TIMEZONE must look like Region/City, got: $TIMEZONE"
+
 # The keys of the account running the install: the ones that just worked to log in.
 admin_keys_source() {
   if [[ -n ${HOMELAB_ADMIN_KEYS:-} ]]; then
@@ -65,6 +70,7 @@ EOF
 admin_user() {
   local src home=/home/$ADMIN_USER
   src=$(admin_keys_source)
+  [[ $src == /* && $src != *..* && $src != *$'\n'* ]] || die "admin keys path must be absolute without .., got: $src"
   # Checked before anything changes: once passwords are off these keys are the only way in.
   if ! [[ -s $src ]] || ! ssh-keygen -l -f "$src" >/dev/null 2>&1; then
     die "no valid SSH public key in $src; the admin user would be locked out (set HOMELAB_ADMIN_KEYS)"

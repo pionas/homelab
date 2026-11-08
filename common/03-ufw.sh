@@ -19,16 +19,10 @@ K3S_POD_NET=10.42.0.0/16
 K3S_SERVICE_NET=10.43.0.0/16
 K3S_API_PORT=6443
 
-# Port this SSH session came in on (empty outside SSH).
-session_port() {
-  local port=''
-  [[ -n ${SSH_CONNECTION:-} ]] && read -r _ _ _ port <<<"$SSH_CONNECTION"
-  echo "$port"
-}
+ssh_session
 
 firewall() {
-  local current port
-  current=$(session_port)
+  local current=$SSH_SERVER_PORT port
   if step_is_done 03-ssh; then
     log_info "public SSH was closed by step 03-ssh; keeping it closed"
   else
@@ -56,11 +50,7 @@ firewall() {
   run ufw --force enable
 }
 
-session_over_wg() {
-  local client=''
-  [[ -n ${SSH_CONNECTION:-} ]] && read -r client _ <<<"$SSH_CONNECTION"
-  [[ $client == "$WG_PREFIX"* ]]
-}
+session_over_wg() { [[ -n $SSH_CLIENT_IP && $SSH_CLIENT_IP == "$WG_PREFIX"* ]]; }
 
 # Proof that an admin can still get in once public SSH is closed: this session comes over
 # WireGuard, or an admin device (.200-.254) has a fresh handshake.
@@ -88,8 +78,7 @@ admin_path_ok() {
 }
 
 close_public_ssh() {
-  local current
-  current=$(session_port)
+  local current=$SSH_SERVER_PORT
   if systemctl is-active --quiet "$ROLLBACK_UNIT.timer"; then
     die "$ROLLBACK_UNIT.timer is still pending from an earlier run; wait for it or stop it first"
   fi

@@ -329,3 +329,70 @@ before() {
 @test "04: the package root CA verifies with openssl" {
   openssl verify -CAfile "$PKG/common/root_ca.crt" "$PKG/common/root_ca.crt"
 }
+
+# --- input validation: nothing from files, arguments or the environment runs as a command ----
+
+@test "security: node.env values with commands are rejected and never executed" {
+  local v
+  for v in 'NODE_NAME=$(touch PWNED)' 'NODE_NAME="a;touch PWNED"' 'PORTS="22;touch PWNED"' 'SERVICES="a b|c"'; do
+    node_env compose 51820 22 "" "" ""
+    sed -i "/^${v%%=*}=/d" "$PKG/node/node.env"
+    printf '%s\n' "$v" >>"$PKG/node/node.env"
+    cd "$T"
+    step 01-base
+    [ "$status" -eq 1 ]
+    [ ! -e "$T/PWNED" ]
+    [[ $output != *apt-get* ]]
+  done
+}
+
+@test "security: node.env cannot set other variables (PATH) and values are range-checked" {
+  echo 'PATH=/tmp/evil' >>"$PKG/node/node.env"
+  step 03-ufw
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"key PATH is not allowed"* ]]
+  node_env bogus 70000 0 "" "99999" ""
+  sed -i 's/^WG_IP=.*/WG_IP=192.168.1.5/' "$PKG/node/node.env"
+  step 03-ufw
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"RUNTIME must be compose or k3s"* && $stderr == *"WG_PORT must be a port"* ]]
+  [[ $stderr == *"SSH_PORT must be a port"* && $stderr == *"PORTS must list ports 1-65535, got: 99999"* ]]
+  [[ $stderr == *"WG_IP must be in 10.100.10.0/24"* ]]
+  [[ $output != *ufw* ]]
+}
+
+@test "security: /etc/os-release is read, not sourced" {
+  printf 'ID=$(touch %s/PWNED)\n' "$T" >"$T/os-release"
+  step 00-preflight
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"unsupported system ''"* ]]
+  [ ! -e "$T/PWNED" ]
+}
+
+@test "security: extra arguments to a step are rejected before anything runs" {
+  step 01-base 'touch /tmp/x'
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"unknown argument: touch /tmp/x"* ]]
+  [[ $output != *apt-get* ]]
+}
+
+@test "security: admin user name and timezone must be plain values" {
+  HOMELAB_ADMIN_USER='a;id' step 01-base
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"HOMELAB_ADMIN_USER must be a lowercase user name other than root"* ]]
+  HOMELAB_ADMIN_USER=root step 01-base
+  [ "$status" -eq 1 ]
+  HOMELAB_TIMEZONE='../../etc/shadow' step 01-base
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"HOMELAB_TIMEZONE must look like Region/City"* ]]
+  HOMELAB_ADMIN_KEYS='relative/keys' step 01-base
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"admin keys path must be absolute"* ]]
+}
+
+@test "security: a malformed SSH_CONNECTION never reaches ufw" {
+  SSH_CONNECTION='1.2.3.4 1 5.6.7.8 22/tcp;id' step 03-ufw
+  [ "$status" -eq 0 ]
+  [[ $stderr == *"ignoring malformed SSH_CONNECTION"* ]]
+  [[ $output != *";id"* ]]
+}

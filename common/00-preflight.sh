@@ -9,12 +9,9 @@ require_root
 OS_RELEASE=${HOMELAB_OS_RELEASE:-/etc/os-release}
 
 preflight() {
-  local rc=0 os f client server_port
-  os=$(
-    # shellcheck disable=SC1090 # system file with KEY=value lines
-    . "$OS_RELEASE"
-    echo "${ID:-}"
-  )
+  local rc=0 os f
+  # Only the ID line is read; the file is not sourced.
+  os=$(sed -n 's/^ID="\{0,1\}\([a-z0-9._-]*\)"\{0,1\}$/\1/p' "$OS_RELEASE" 2>/dev/null | head -n1)
   [[ $os == debian || $os == ubuntu ]] || {
     log_error "unsupported system '$os': Debian or Ubuntu required"
     rc=1
@@ -35,11 +32,11 @@ preflight() {
       rc=1
     }
   done
-  if [[ -n ${SSH_CONNECTION:-} ]]; then
-    read -r client _ _ server_port <<<"$SSH_CONNECTION"
-    log_info "SSH session from $client to port $server_port"
-    if [[ $server_port != "$SSH_PORT" ]]; then
-      log_warn "sshd moves to port $SSH_PORT in step 01 (this session stays on $server_port):" \
+  ssh_session
+  if [[ -n $SSH_SERVER_PORT ]]; then
+    log_info "SSH session from $SSH_CLIENT_IP to port $SSH_SERVER_PORT"
+    if [[ $SSH_SERVER_PORT != "$SSH_PORT" ]]; then
+      log_warn "sshd moves to port $SSH_PORT in step 01 (this session stays on $SSH_SERVER_PORT):" \
         "make sure the provider lets $SSH_PORT/tcp through before continuing"
     fi
   else

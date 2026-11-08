@@ -148,3 +148,21 @@ listing() { tar -tzf "$OUT/$1.tar.gz"; }
   grep -qx 'PUBLIC_PORTS=""' "$OUT/vps2/node.env"
   grep -qx 'PUBLIC_PORTS="80 443"' "$OUT/edge/node.env"
 }
+
+@test "security: install.sh accepts only --dry-run, --force and one --step from its own list" {
+  local pkg="$BATS_TEST_TMPDIR/pkg" f
+  mkdir -p "$pkg" && tar -xzf "$OUT/vps2.tar.gz" -C "$pkg"
+  for f in 00-preflight 01-base 02-wireguard 03-ufw 04-ca-trust 10-docker; do
+    printf 'echo "%s $*"\n' "$f" >"$pkg/common/$f.sh"
+  done
+  for args in 'extra' '--step' '--step 03;id' '--step $(id)' '--step 03 --step 04' '--step 03-foo' '--dry-run -x'; do
+    # shellcheck disable=SC2086 # split the test arguments on purpose
+    run "$pkg/vps2/install.sh" $args
+    [ "$status" -eq 2 ]
+    [[ $output != *preflight* && $output != *ufw* ]]
+  done
+  run "$pkg/vps2/install.sh" --step '03;id'
+  [ "$status" -eq 2 ]
+  run "$pkg/vps2/install.sh" --step 03-ssh
+  [ "$output" = "03-ufw " ]
+}
