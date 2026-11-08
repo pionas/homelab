@@ -174,7 +174,6 @@ _state_check() {
   done < <(_state_yq -r '.machines[] | ["'"$_STATE_ROW"'", .name // "", .endpoint // "", .os // "", .runtime // "",
     .wg_ip // "", (.wg_port | tag), .wg_port // "", (.ssh_port | tag), .ssh_port // "",
     (.services | tag), ((.services // []) | join(" "))] | join("'"$_STATE_FS"'")' 2>/dev/null)
-  ((i > 0)) || _state_err "no machines (the first one is the edge)"
 
   local type
   while IFS=$_STATE_FS read -r mark name type ip; do
@@ -206,5 +205,17 @@ _state_check() {
 state_validate() {
   catalog_load "$2" || return 1
   state_load "$1" || return 1
-  _state_check 1
+  state_check_complete
+}
+
+# state_check_complete — the full check of a finished state: fields, services, at least the edge.
+# (Adding items checks only fields, so devices can be added before the first machine.)
+state_check_complete() {
+  local rc=0
+  _state_check 1 || rc=1
+  [[ $(_state_yq '.machines | length') != 0 ]] || {
+    log_error "state: no machines (the first one is the edge)"
+    rc=1
+  }
+  return "$rc"
 }
