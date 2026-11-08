@@ -27,7 +27,7 @@ Dokument uzupełnia „Dokumentację Architektury Rozproszonego Homelaba”. Opi
 | Porty publiczne | Tylko usługi z `PLACEMENT=edge` mogą mieć `PUBLIC_PORTS` (bindowane publicznie, np. Traefik 80/443). Wszystkie inne porty (`PORTS`) — wyłącznie na adresie WG. |
 | Port WireGuard | Per maszyna (`wg_port` w stanie). Port podany dla edge (domyślnie `51820`) jest domyślny dla kolejnych maszyn, każdą można zmienić — w homelabie dostępne są wszystkie porty, produkcyjny VPS może udostępniać tylko kilka albo jeden. `Endpoint` peera = jego adres osiągalności + jego `wg_port`. |
 | Port SSH | Per maszyna (`ssh_port` w stanie), domyślnie `22`, zmieniany w odpowiedziach kreatora. Używany w `sshd_config` (krok 01) i UFW (krok 03). |
-| Priorytety eksporterów | Wszystkie eksportery (`auto`) mają priorytet **39** — po warstwie danych (30–35), przed edge (40). |
+| Priorytety eksporterów | Wszystkie eksportery (`auto`) mają priorytet **39** — po warstwie danych (30–35), przed edge (40). `node-exporter` (`always`) to usługa hosta z priorytetem 12. |
 | Znaczniki kroków | Kroki `common/` — `done/NN`; kroki usług — `done/NN-id` (np. `30-postgresql`), więc usługi o tym samym priorytecie się nie zderzają. Wyjątek w `common/`: `03-ssh`. |
 | Konta tylko do odczytu | Jedna nazwa roli: **`VIEWER`** (panele i eksportery, osobne konta per usługa). |
 | Język kreatora | **Bash** (`whiptail`, fallback na `read`). |

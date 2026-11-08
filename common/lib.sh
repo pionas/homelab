@@ -166,7 +166,7 @@ HOMELAB_COMMON_DIR=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 # shellcheck disable=SC2034 # used by the install steps that source this file
 HOMELAB_WG_NET=10.100.10.0/24
 
-_NODE_ENV_KEYS='NODE_NAME|WG_IP|WG_PORT|SSH_PORT|RUNTIME|OS|SERVICES|PORTS|PUBLIC_PORTS'
+_NODE_ENV_KEYS='NODE_NAME|WG_IP|WG_PORT|SSH_PORT|RUNTIME|OS|SERVICES|COMPOSE_SERVICES|PORTS|PUBLIC_PORTS'
 
 _valid_port() { [[ $1 =~ ^[1-9][0-9]{0,4}$ ]] && (($1 <= 65535)); }
 
@@ -189,7 +189,12 @@ load_node_env() {
   done
   [[ $RUNTIME =~ ^(compose|k3s)$ ]] || _node_bad "RUNTIME must be compose or k3s, got: $RUNTIME"
   [[ $OS =~ ^(debian|ubuntu)$ ]] || _node_bad "OS must be debian or ubuntu, got: $OS"
-  [[ ${SERVICES:-} =~ ^([a-z0-9]+(-[a-z0-9]+)*( |$))*$ ]] || _node_bad "SERVICES must be service ids, got: $SERVICES"
+  for p in SERVICES COMPOSE_SERVICES; do
+    [[ ${!p:-} =~ ^([a-z0-9]+(-[a-z0-9]+)*( |$))*$ ]] || _node_bad "$p must be service ids, got: ${!p}"
+  done
+  for bad in ${COMPOSE_SERVICES:-}; do
+    [[ " ${SERVICES:-} " == *" $bad "* ]] || _node_bad "COMPOSE_SERVICES has $bad, which is not in SERVICES"
+  done
   for p in PORTS PUBLIC_PORTS; do
     for bad in ${!p:-}; do
       _valid_port "$bad" || _node_bad "$p must list ports 1-65535, got: $bad"
@@ -213,9 +218,55 @@ ssh_session() {
   fi
 }
 
+HOMELAB_OS_RELEASE=${HOMELAB_OS_RELEASE:-/etc/os-release}
+# k3s data directory; k3s applies every manifest in its server/manifests on its own.
+HOMELAB_K3S_DATA_DIR=${HOMELAB_K3S_DATA_DIR:-/var/lib/rancher/k3s}
+# shellcheck disable=SC2034 # used by step 11 and k3s service installers
+HOMELAB_K3S_MANIFESTS=$HOMELAB_K3S_DATA_DIR/server/manifests
+
+# os_release_value KEY — one field of os-release (ID, VERSION_CODENAME); the file is read, not
+# sourced, and only plain values [a-z0-9._-] are returned (empty otherwise).
+os_release_value() {
+  [[ $1 =~ ^[A-Z_]+$ ]] || die "os_release_value: bad key $1"
+  sed -n "s/^$1=\"\{0,1\}\([a-z0-9._-]*\)\"\{0,1\}\$/\1/p" "$HOMELAB_OS_RELEASE" 2>/dev/null | head -n1
+}
+
+# fetch URL DEST — downloads over HTTPS only (TLS 1.2+, no redirects to other schemes).
+fetch() {
+  [[ $1 == https://* ]] || die "fetch: only https URLs, got: $1"
+  run curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 -o "$2" "$1"
+}
+
+# verify_sha256 FILE SHA256 — dies unless FILE has exactly this checksum.
+verify_sha256() {
+  if ((DRY_RUN)); then
+    printf '[dry-run] verify sha256 %s = %s\n' "$1" "$2"
+    return 0
+  fi
+  local got
+  got=$(sha256sum "$1" | cut -d' ' -f1)
+  [[ $got == "$2" ]] || die "checksum mismatch for $1: expected $2, got $got (download tampered or changed)"
+}
+
+# verify_gpg_fingerprint FILE FINGERPRINT — dies unless FILE is exactly the key with this fingerprint.
+verify_gpg_fingerprint() {
+  if ((DRY_RUN)); then
+    printf '[dry-run] verify gpg fingerprint %s = %s\n' "$1" "$2"
+    return 0
+  fi
+  local home fprs
+  home=$(mktemp -d)
+  fprs=$(gpg --homedir "$home" --show-keys --with-colons "$1" 2>/dev/null | awk -F: '$1 == "fpr" {print $10}')
+  rm -rf "$home"
+  [[ $fprs == "$2" ]] || die "unexpected key in $1: expected only $2, got: ${fprs:-none}"
+}
+
 # check_flags — the shared settings a caller may pass in the environment must be plain values.
 check_flags() {
   [[ $DRY_RUN =~ ^[01]$ && $FORCE =~ ^[01]$ ]] || die "DRY_RUN and FORCE must be 0 or 1"
   [[ -n ${_LOG_LEVELS[$LOG_LEVEL]+set} ]] || die "LOG_LEVEL must be debug, info, warn or error"
-  [[ $HOMELAB_STATE_DIR == /* && $HOMELAB_STATE_DIR != *..* ]] || die "HOMELAB_STATE_DIR must be an absolute path without .."
+  local d
+  for d in HOMELAB_STATE_DIR HOMELAB_K3S_DATA_DIR; do
+    [[ ${!d} == /* && ${!d} != *..* ]] || die "$d must be an absolute path without .."
+  done
 }

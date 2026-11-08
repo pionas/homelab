@@ -213,3 +213,30 @@ setup() {
   run in_lib 'SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22 extra"; ssh_session; echo "[$SSH_SERVER_PORT]"'
   [[ $output == *"[]"* ]]
 }
+
+@test "os_release_value reads plain values only and never executes the file" {
+  printf 'ID="debian"\nVERSION_CODENAME=trixie\nNAME=$(touch %s/PWNED)\n' "$BATS_TEST_TMPDIR" >"$BATS_TEST_TMPDIR/os"
+  run in_lib "HOMELAB_OS_RELEASE='$BATS_TEST_TMPDIR/os'; os_release_value ID; os_release_value VERSION_CODENAME; echo \"[\$(os_release_value NAME)]\""
+  [ "$output" = $'debian\ntrixie\n[]' ]
+  [ ! -e "$BATS_TEST_TMPDIR/PWNED" ]
+}
+
+@test "fetch allows https only and passes the URL as one argument" {
+  run in_lib "DRY_RUN=1; fetch 'https://example.com/a b' /tmp/x"
+  [ "$status" -eq 0 ]
+  [[ $output == *"--proto =https"*"https://example.com/a\ b"* ]]
+  run in_lib "DRY_RUN=1; fetch 'http://example.com' /tmp/x"
+  [ "$status" -eq 1 ]
+  [[ $output == *"only https URLs"* ]]
+}
+
+@test "verify_sha256 accepts the right checksum and dies on any other" {
+  echo data >"$BATS_TEST_TMPDIR/f"
+  local sum
+  sum=$(sha256sum "$BATS_TEST_TMPDIR/f" | cut -d' ' -f1)
+  run in_lib "verify_sha256 '$BATS_TEST_TMPDIR/f' $sum"
+  [ "$status" -eq 0 ]
+  run in_lib "verify_sha256 '$BATS_TEST_TMPDIR/f' 0000"
+  [ "$status" -eq 1 ]
+  [[ $output == *"checksum mismatch"* ]]
+}

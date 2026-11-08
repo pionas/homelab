@@ -6,12 +6,9 @@ source "$(dirname "$0")/lib.sh"
 parse_common_args "$@"
 require_root
 
-OS_RELEASE=${HOMELAB_OS_RELEASE:-/etc/os-release}
-
 preflight() {
   local rc=0 os f
-  # Only the ID line is read; the file is not sourced.
-  os=$(sed -n 's/^ID="\{0,1\}\([a-z0-9._-]*\)"\{0,1\}$/\1/p' "$OS_RELEASE" 2>/dev/null | head -n1)
+  os=$(os_release_value ID)
   [[ $os == debian || $os == ubuntu ]] || {
     log_error "unsupported system '$os': Debian or Ubuntu required"
     rc=1

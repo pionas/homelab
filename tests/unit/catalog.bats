@@ -109,9 +109,16 @@ on_fixture() {
   expect_invalid "PUBLIC_PORTS is allowed only with PLACEMENT=edge"
 }
 
-@test "rejects an exporter with PRIORITY other than 39" {
+@test "rejects an auto exporter with PRIORITY other than 39" {
   set_key db-exporter PRIORITY 31
-  expect_invalid "exporters must have PRIORITY=39"
+  expect_invalid "auto exporters must have PRIORITY=39"
+}
+
+@test "an always exporter (node-exporter) keeps its own priority" {
+  mv "$CAT/node-agent" "$CAT/node-exporter"
+  set_key node-exporter ID node-exporter
+  run in_catalog "catalog_load '$CAT'"
+  [ "$status" -eq 0 ]
 }
 
 @test "rejects an invalid secret role" {
