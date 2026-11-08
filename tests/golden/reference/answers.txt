@@ -1,0 +1,11 @@
+# Reference split: edge, a k3s hub with infrastructure and ArgoCD, a data machine behind a provider
+# exposing only 443/udp and 2222/tcp, two application clusters and one machine with no extra services.
+DEFAULT_RUNTIME=compose
+MACHINES=6
+DEVICES="laptop:linux telefon:android tablet:ios pc:windows"
+M1_NAME=edge M1_ENDPOINT=192.168.56.10 M1_SERVICES="traefik"
+M2_NAME=vps1 M2_ENDPOINT=192.168.56.11 M2_ARGOCD=yes M2_SERVICES="coredns step-ca openbao argocd"
+M3_NAME=vps2 M3_ENDPOINT=192.168.56.12 M3_WG_PORT=443 M3_SSH_PORT=2222 M3_SERVICES="postgresql redis"
+M4_NAME=vps3 M4_ENDPOINT=192.168.56.13 M4_ARGOCD=yes M4_SERVICES="app-cluster"
+M5_NAME=vps4 M5_ENDPOINT=2001:db8::14 M5_ARGOCD=yes M5_SERVICES="app-cluster"
+M6_NAME=vps5 M6_ENDPOINT=vps5.example.net M6_OS=ubuntu

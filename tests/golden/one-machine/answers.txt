@@ -1,0 +1,4 @@
+# Everything on the edge: no CoreDNS needed with a single machine.
+MACHINES=1
+DEVICES="laptop:windows"
+M1_NAME=edge M1_ENDPOINT=203.0.113.10 M1_SERVICES="traefik step-ca postgresql"

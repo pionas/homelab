@@ -1,0 +1,21 @@
+gitops_repo: git@example.com:pionas/homelab-gitops.git
+default_runtime: compose
+machines:
+  - name: edge
+    endpoint: 203.0.113.10
+    os: debian
+    runtime: compose
+    wg_ip: 10.100.10.100
+    wg_port: 51820
+    ssh_port: 22
+    services:
+      - node-agent
+      - step-ca
+      - postgresql
+      - traefik
+    wg_public_key: N2LfgAWLzaUBcUFEn/geFMELa17jTyRXkLnp85goT20=
+admin_devices:
+  - name: laptop
+    type: windows
+    wg_ip: 10.100.10.200
+    wg_public_key: MnA3TR/bj1pIEIkUDPwcEDU8vv1Yxev63ws/pljs8Ss=

@@ -1,0 +1,15 @@
+common/
+common/lib.sh
+common/root_ca.crt
+vps2/
+vps2/install.sh
+vps2/node.env
+vps2/secrets.env
+vps2/services/
+vps2/services/node-agent/
+vps2/services/postgres-exporter/
+vps2/services/postgresql/
+vps2/services/postgresql/docker-compose.yml
+vps2/services/postgresql/install.sh
+vps2/services/redis/
+vps2/wg0.conf

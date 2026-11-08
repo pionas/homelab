@@ -1,0 +1,89 @@
+gitops_repo: git@example.com:pionas/homelab-gitops.git
+default_runtime: compose
+machines:
+  - name: edge
+    endpoint: 192.168.56.10
+    os: debian
+    runtime: compose
+    wg_ip: 10.100.10.100
+    wg_port: 51820
+    ssh_port: 22
+    services:
+      - node-agent
+      - traefik
+    wg_public_key: N2LfgAWLzaUBcUFEn/geFMELa17jTyRXkLnp85goT20=
+  - name: vps1
+    endpoint: 192.168.56.11
+    os: debian
+    runtime: k3s
+    wg_ip: 10.100.10.101
+    wg_port: 51820
+    ssh_port: 22
+    services:
+      - node-agent
+      - coredns
+      - step-ca
+      - openbao
+      - argocd
+    wg_public_key: MnA3TR/bj1pIEIkUDPwcEDU8vv1Yxev63ws/pljs8Ss=
+  - name: vps2
+    endpoint: 192.168.56.12
+    os: debian
+    runtime: compose
+    wg_ip: 10.100.10.102
+    wg_port: 443
+    ssh_port: 2222
+    services:
+      - node-agent
+      - postgresql
+      - redis
+    wg_public_key: C0VfyA+lTNvifCEPYGasL57bxTD+HX7psNwyD4+rty0=
+  - name: vps3
+    endpoint: 192.168.56.13
+    os: debian
+    runtime: k3s
+    wg_ip: 10.100.10.103
+    wg_port: 51820
+    ssh_port: 22
+    services:
+      - node-agent
+      - app-cluster
+    wg_public_key: cG1SqOaNHLFv0/S5HSxpiJBux/0bYAne0LDMFIXm3n0=
+  - name: vps4
+    endpoint: 2001:db8::14
+    os: debian
+    runtime: k3s
+    wg_ip: 10.100.10.104
+    wg_port: 51820
+    ssh_port: 22
+    services:
+      - node-agent
+      - app-cluster
+    wg_public_key: Nl//YTKelxyJgbsxM3JJQug0SqS/3UOVBQofhKN6eGs=
+  - name: vps5
+    endpoint: vps5.example.net
+    os: ubuntu
+    runtime: compose
+    wg_ip: 10.100.10.105
+    wg_port: 51820
+    ssh_port: 22
+    services:
+      - node-agent
+    wg_public_key: 9LYW+m+cDnLXd8TkJzGPagWOoInpgrize+bTWqw5eXI=
+admin_devices:
+  - name: laptop
+    type: linux
+    wg_ip: 10.100.10.200
+    wg_public_key: DWpb32HZ1jYGdBF8dzSq7FOp6eftEzfRV+ap/PV53gA=
+  - name: telefon
+    type: android
+    wg_ip: 10.100.10.201
+    wg_public_key: 0ieU7ct/Pxq6JgdL+RsAuFhxbG/0diMWMx1LTjz7VBo=
+  - name: tablet
+    type: ios
+    wg_ip: 10.100.10.202
+    wg_public_key: +IOPEYoMHcsZdWRQqPkRoMYBiM1Kw6VFFvxYb9z/gAM=
+  - name: pc
+    type: windows
+    wg_ip: 10.100.10.203
+    wg_public_key: +v2llRQuJfo8R8jtGDKiN/mhWzVJmOxKcl+oWFWhSkg=

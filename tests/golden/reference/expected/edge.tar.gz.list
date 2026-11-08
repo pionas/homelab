@@ -1,0 +1,11 @@
+common/
+common/lib.sh
+common/root_ca.crt
+edge/
+edge/install.sh
+edge/node.env
+edge/secrets.env
+edge/services/
+edge/services/node-agent/
+edge/services/traefik/
+edge/wg0.conf

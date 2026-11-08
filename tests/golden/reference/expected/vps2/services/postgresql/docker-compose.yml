@@ -1,0 +1,11 @@
+services:
+  postgresql:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: golden-secret-4
+      # Not in the substitution list, so it is left for docker compose.
+      PGDATA: ${PGDATA:-/var/lib/postgresql/data}
+    ports:
+      - "10.100.10.102:5432:5432"

@@ -14,6 +14,8 @@ _CATALOG_LINE_RE='^([A-Z_]+)=("([^"$`\\]*)"|([^"$`\\[:space:]#]*))[[:space:]]*(#
 
 declare -gA _CATALOG=()
 declare -ga _CATALOG_IDS=()
+# Directory of the loaded catalog: templates and installers live in $_CATALOG_DIR/<id>/.
+declare -g _CATALOG_DIR=''
 
 _catalog_has() { [[ -n ${_CATALOG["$1,ID"]+set} ]]; }
 
@@ -152,6 +154,7 @@ catalog_load() {
     return 1
   }
   _catalog_validate_refs || rc=1
+  _CATALOG_DIR=$dir
   return "$rc"
 }
 
