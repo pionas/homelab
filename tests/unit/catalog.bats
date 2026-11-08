@@ -1,12 +1,12 @@
 #!/usr/bin/env bats
 # Tests for lib/catalog.sh. Fixture: tests/fixtures/catalog-valid
 #   node-agent  always compose,k3s 12
-#   db          single compose 30  AUTO_ADD=db-exporter
+#   db          single compose 30  AUTO_ADD=db-exporter SECRETS="ROOT DEFAULT VIEWER"
 #   db-exporter auto   compose 39  REQUIRES=db AUTO_ADD=log-shipper USES_SECRETS=DB:VIEWER
 #   log-shipper auto   compose 38
-#   cache       multi  compose 33
+#   cache       multi  compose 33  SECRETS=DEFAULT
 #   proxy       single compose 40  PLACEMENT=edge
-#   vault       single compose 45
+#   vault       single compose 45  SECRETS=ROOT
 #   gitops      single k3s     50  REQUIRES=vault
 #   app-cluster multi  k3s     60  REQUIRES=gitops
 # shellcheck disable=SC2016,SC2154 # scripts expand in the child bash; $stderr is set by bats
