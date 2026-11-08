@@ -309,3 +309,23 @@ before() {
   [[ $output != *"ufw allow 22/tcp"* ]]
   [[ $output == *"ufw allow from 10.100.10.0/24 to any port 22 proto tcp"* ]]
 }
+
+# --- 04 CA trust --------------------------------------------------------------
+
+@test "04: installs root_ca.crt for update-ca-certificates" {
+  step 04-ca-trust
+  [ "$status" -eq 0 ]
+  before "install -m 644 $PKG/common/root_ca.crt /usr/local/share/ca-certificates/homelab-root-ca.crt" 'update-ca-certificates'
+}
+
+@test "04: rejects a file that is not a certificate" {
+  echo garbage >"$PKG/common/root_ca.crt"
+  step 04-ca-trust
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"is not a PEM certificate"* ]]
+  [[ $output != *update-ca-certificates* ]]
+}
+
+@test "04: the package root CA verifies with openssl" {
+  openssl verify -CAfile "$PKG/common/root_ca.crt" "$PKG/common/root_ca.crt"
+}
