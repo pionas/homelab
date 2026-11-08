@@ -207,3 +207,105 @@ before() {
   [ "$status" -eq 0 ]
   [[ $stderr == *"all 2 WireGuard peers have a handshake"* ]]
 }
+
+# --- 03 UFW and 03-ssh --------------------------------------------------------
+
+@test "03: SSH allowed before ufw enable; deny incoming; WG port; service ports only from the WG network" {
+  step 03-ufw
+  [ "$status" -eq 0 ]
+  before 'ufw allow 22/tcp' 'ufw --force enable'
+  before 'ufw default deny incoming' 'ufw --force enable'
+  [[ $output == *"[dry-run] ufw allow 51820/udp"* ]]
+  [[ $output == *"[dry-run] ufw allow from 10.100.10.0/24 to any port 5432 proto tcp"* ]]
+  [[ $output == *"[dry-run] ufw allow from 10.100.10.0/24 to any port 22 proto tcp"* ]]
+  [[ $output != *"ufw allow 5432"* ]] # never public
+}
+
+@test "03: compose machine has no k3s rules" {
+  step 03-ufw
+  [ "$status" -eq 0 ]
+  [[ $output != *10.42.0.0/16* && $output != *10.43.0.0/16* && $output != *6443* ]]
+}
+
+@test "03: k3s machine also allows pod and service networks and the API from WireGuard" {
+  node_env k3s 51820 22 "" "" ""
+  step 03-ufw
+  [ "$status" -eq 0 ]
+  [[ $output == *"[dry-run] ufw allow from 10.42.0.0/16"* ]]
+  [[ $output == *"[dry-run] ufw allow from 10.43.0.0/16"* ]]
+  [[ $output == *"[dry-run] ufw allow from 10.100.10.0/24 to any port 6443 proto tcp"* ]]
+  before 'ufw allow from 10.42.0.0/16' 'ufw --force enable'
+}
+
+@test "03: PUBLIC_PORTS of the edge are open to everyone" {
+  node_env compose 51820 22 "traefik" "" "80 443"
+  step 03-ufw
+  [[ $output == *"[dry-run] ufw allow 80/tcp"* && $output == *"[dry-run] ufw allow 443/tcp"* ]]
+}
+
+@test "03: non-default ports (WG 443, SSH 2222) are used, 51820 and 22 appear nowhere" {
+  node_env compose 443 2222 "" "" ""
+  step 03-ufw
+  [ "$status" -eq 0 ]
+  [[ $output == *"[dry-run] ufw allow 2222/tcp"* && $output == *"[dry-run] ufw allow 443/udp"* ]]
+  [[ $output != *51820* ]]
+  run grep -E '\b22/tcp|port 22 ' <<<"$output"
+  [ "$status" -eq 1 ]
+}
+
+@test "03: the current session's port stays allowed while sshd moved (22 -> 2222), all before enable" {
+  node_env compose 51820 2222 "" "" ""
+  SSH_CONNECTION="203.0.113.5 50000 198.51.100.7 22" step 03-ufw
+  [ "$status" -eq 0 ]
+  before 'ufw allow 2222/tcp' 'ufw --force enable'
+  before 'ufw allow 22/tcp' 'ufw --force enable'
+}
+
+@test "03-ssh: no admin handshake -> public SSH stays, no delete, no marker, instructions" {
+  FAKE_PEERS="adm:10.100.10.200 m:10.100.10.102" FAKE_HANDSHAKES="adm:never m:5" step 03-ufw
+  [ "$status" -eq 0 ]
+  [[ $output != *"ufw delete"* && $output != *systemd-run* ]]
+  [[ $stderr == *"public SSH stays open"*"sudo ./install.sh --step 03-ssh"* ]]
+  [ ! -e "$T/state/done/03-ssh" ]
+}
+
+@test "03-ssh: a stale admin handshake (> 120 s) is not enough; a machine peer never counts" {
+  FAKE_PEERS="adm:10.100.10.200 m:10.100.10.102" FAKE_HANDSHAKES="adm:300 m:1" step 03-ufw
+  [[ $output != *"ufw delete"* ]]
+}
+
+@test "03-ssh: fresh admin handshake -> rollback timer before closing; timer left running for the admin" {
+  node_env compose 51820 2222 "" "" ""
+  FAKE_PEERS="adm:10.100.10.201" FAKE_HANDSHAKES="adm:30" \
+    SSH_CONNECTION="203.0.113.5 50000 198.51.100.7 22" step 03-ufw
+  [ "$status" -eq 0 ]
+  before 'systemd-run --unit homelab-ssh-rollback --on-active=5min ufw allow 2222/tcp' 'ufw delete allow 2222/tcp'
+  [[ $output == *"[dry-run] ufw delete allow 22/tcp"* ]] # the old session port too
+  [[ $output != *"systemctl stop homelab-ssh-rollback.timer"* ]]
+  [[ $stderr == *"sudo systemctl stop homelab-ssh-rollback.timer"* ]]
+  run grep -c 'ufw allow from 10.100.10.0/24 to any port 2222 proto tcp' <<<"$output"
+  [ "$output" = 1 ]
+}
+
+@test "03-ssh: session over WireGuard proves the path; the rollback timer is stopped" {
+  mkdir -p "$T/state/done" && touch "$T/state/done/03"
+  SSH_CONNECTION="10.100.10.200 50000 10.100.10.101 22" step 03-ufw
+  [ "$status" -eq 0 ]
+  [[ $output != *"ufw --force enable"* ]] # step 03 itself is done
+  before 'systemd-run' 'ufw delete allow 22/tcp'
+  before 'ufw delete allow 22/tcp' 'systemctl stop homelab-ssh-rollback.timer'
+}
+
+@test "03-ssh: a pending rollback timer stops it" {
+  FAKE_ACTIVE=homelab-ssh-rollback.timer SSH_CONNECTION="10.100.10.200 1 10.100.10.101 22" step 03-ufw
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"homelab-ssh-rollback.timer is still pending"* ]]
+}
+
+@test "03: after 03-ssh, re-running 03 with --force does not reopen public SSH" {
+  mkdir -p "$T/state/done" && touch "$T/state/done/03-ssh"
+  step 03-ufw --force
+  [ "$status" -eq 0 ]
+  [[ $output != *"ufw allow 22/tcp"* ]]
+  [[ $output == *"ufw allow from 10.100.10.0/24 to any port 22 proto tcp"* ]]
+}
