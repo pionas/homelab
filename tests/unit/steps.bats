@@ -16,7 +16,7 @@ setup() {
   printf '[Interface]\nAddress = 10.100.10.101/24\nPrivateKey = x\nListenPort = 51820\n' >"$PKG/node/wg0.conf"
   echo 'X=1' >"$PKG/node/secrets.env"
   chmod 600 "$PKG/node/secrets.env"
-  printf 'ID=debian\n' >"$T/os-release"
+  printf 'ID=debian\nVERSION_CODENAME=trixie\n' >"$T/os-release"
   ssh-keygen -q -t ed25519 -N '' -f "$T/admin" && cp "$T/admin.pub" "$T/authorized_keys"
   fakes
   export HOMELAB_STATE_DIR=$T/state HOMELAB_NODE_DIR=$PKG/node HOMELAB_OS_RELEASE=$T/os-release
@@ -36,6 +36,7 @@ fake() { printf '#!/usr/bin/env bash\n%s\n' "$2" >"$T/bin/$1" && chmod +x "$T/bi
 fakes() {
   fake sshd 'case $1 in -T) echo "port ${FAKE_SSHD_PORT:-22}" ;; esac'
   fake getent '[[ -z ${FAKE_NO_NET:-} ]]'
+  fake dpkg '[[ $1 == --print-architecture ]] && echo "${FAKE_ARCH:-amd64}"'
   fake modinfo '[[ -z ${FAKE_NO_WG_MODULE:-} ]]'
   fake id '[[ $1 == -u && -n ${FAKE_ADMIN_EXISTS:-} ]] && echo 1000 || exit 1'
   # is-active/is-enabled answer from FAKE_ACTIVE / FAKE_ENABLED (space-separated unit names).
@@ -402,4 +403,55 @@ before() {
   step 03-ufw
   [ "$status" -eq 1 ]
   [[ $stderr == *"COMPOSE_SERVICES has evil, which is not in SERVICES"* ]]
+}
+
+# --- 10 Docker ------------------------------------------------------------------
+
+@test "10: compose machine gets Docker from Docker's repo, key fingerprint checked before apt trusts it" {
+  node_env compose 51820 22 "node-exporter postgresql" "9100 5432" ""
+  printf 'COMPOSE_SERVICES="node-exporter postgresql"\n' >>"$PKG/node/node.env"
+  step 10-docker
+  [ "$status" -eq 0 ]
+  [[ $output == *'"bip": "172.17.0.1/16"'* ]]
+  before 'write /etc/docker/daemon.json' 'apt-get install -y docker-ce'
+  before 'curl .*https://download.docker.com/linux/debian/gpg' 'verify gpg fingerprint .* = 9DC858229FC7DD38854AE2D88D81803C0EBFCD88'
+  before 'verify gpg fingerprint' 'install -m 644 /etc/apt/keyrings/docker.asc.download /etc/apt/keyrings/docker.asc'
+  before 'install -m 644 .*docker.asc' 'write /etc/apt/sources.list.d/docker.list'
+  [[ $output == *"deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian trixie stable"* ]]
+  [[ $output == *"docker-compose-plugin"* ]]
+  [[ $output != *k3s* ]]
+}
+
+@test "10: k3s machine with only k3s services does not install Docker" {
+  node_env k3s 51820 22 "node-exporter app-cluster" "9100" ""
+  printf 'COMPOSE_SERVICES=""\n' >>"$PKG/node/node.env"
+  step 10-docker
+  [ "$status" -eq 0 ]
+  [[ $output != *docker-ce* && $output != *"[dry-run]"* ]]
+  [[ $stderr == *"no service of vps1 runs under Docker, skipping"* ]]
+}
+
+@test "10: k3s machine with a compose service (OpenBao) gets Docker" {
+  node_env k3s 51820 22 "node-exporter openbao" "9100 8200" ""
+  printf 'COMPOSE_SERVICES="openbao"\n' >>"$PKG/node/node.env"
+  step 10-docker
+  [ "$status" -eq 0 ]
+  [[ $output == *docker-ce* ]]
+}
+
+@test "10: Ubuntu uses Docker's ubuntu repository; odd codename or arch stops the step" {
+  node_env compose 51820 22 "postgresql" "5432" ""
+  printf 'COMPOSE_SERVICES="postgresql"\n' >>"$PKG/node/node.env"
+  sed -i 's/^OS=.*/OS=ubuntu/' "$PKG/node/node.env"
+  printf 'ID=ubuntu\nVERSION_CODENAME=noble\n' >"$T/os-release"
+  step 10-docker
+  [[ $output == *"https://download.docker.com/linux/ubuntu noble stable"* ]]
+  printf 'ID=ubuntu\nVERSION_CODENAME="noble; id"\n' >"$T/os-release"
+  step 10-docker
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"cannot read VERSION_CODENAME"* ]]
+  printf 'ID=ubuntu\nVERSION_CODENAME=noble\n' >"$T/os-release"
+  FAKE_ARCH='amd64 x' step 10-docker
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"unexpected dpkg architecture"* ]]
 }
