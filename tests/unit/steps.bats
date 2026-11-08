@@ -47,7 +47,12 @@ fakes() {
     case "$3" in
       latest-handshakes) for e in ${FAKE_HANDSHAKES:-}; do a=${e#*:}; [[ $a == never ]] && t=0 || t=$((now - a)); printf "%s\t%s\n" "${e%%:*}" "$t"; done ;;
       allowed-ips) for e in ${FAKE_PEERS:-}; do printf "%s\t%s/32\n" "${e%%:*}" "${e#*:}"; done ;;
+      listen-port) echo "${FAKE_WG_LISTEN:-51820}" ;;
     esac'
+  fake ufw '[[ $1 == status && -z ${FAKE_UFW_INACTIVE:-} ]] && echo "Status: active"'
+  fake curl '[[ -z ${FAKE_NO_METRICS:-} ]] && echo "node_exporter_build_info{version=\"1\"} 1"'
+  # k3s kubectl: get --raw (FAKE_K3S_DOWN fails it) and run (prints ok:PORT for FAKE_POD_OK ports).
+  fake k3s 'case "$2" in get) [[ -z ${FAKE_K3S_DOWN:-} ]] ;; run) for p in ${FAKE_POD_OK:-}; do echo "ok:$p"; done ;; esac'
 }
 
 # step NAME [ARG...] — runs common/NAME.sh with --dry-run and the fakes first in PATH.
@@ -635,4 +640,79 @@ service() {
   [ "$status" -eq 0 ]
   [[ $output != *"compose -f"* ]]
   [[ $stderr == *"skipped in container: docker compose up"* ]]
+}
+
+# --- 90 verification ------------------------------------------------------------------
+
+verify() {
+  export HOMELAB_CA_BUNDLE=$PKG/common/root_ca.crt
+  step 90-verify
+}
+
+@test "90: a working compose machine passes (WG port, sshd port, UFW, CA, node_exporter)" {
+  node_env compose 51820 22 "node-exporter" "9100" ""
+  FAKE_HANDSHAKES="a:5" verify
+  [ "$status" -eq 0 ]
+  [[ $stderr == *"verify OK: wg0 listens on 51820/udp"* && $stderr == *"verify OK: sshd on port 22"* ]]
+  [[ $stderr == *"verify OK: UFW active"* && $stderr == *"verify OK: homelab root CA trusted"* ]]
+  [[ $stderr == *"verify OK: node_exporter on 10.100.10.101:9100"* ]]
+  [[ $stderr == *"verification of vps1 passed"* ]]
+  [[ $output != *"[dry-run]"* ]] # read-only
+}
+
+@test "90: reports every failure and exits 1" {
+  node_env compose 443 2222 "node-exporter" "9100" ""
+  sed -i 's/^ListenPort = .*/ListenPort = 443/' "$PKG/node/wg0.conf"
+  export HOMELAB_CA_BUNDLE=$T/os-release # not a CA bundle
+  FAKE_WG_LISTEN=51820 FAKE_UFW_INACTIVE=1 FAKE_NO_METRICS=1 step 90-verify
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"wg0 listens on 51820, expected 443"* && $stderr == *"sshd on port 22, expected 2222"* ]]
+  [[ $stderr == *"UFW is not active"* && $stderr == *"homelab root CA is not in"* ]]
+  [[ $stderr == *"node_exporter does not answer"* && $stderr == *"verification of vps1 failed"* ]]
+}
+
+@test "90: wg0 down is a failure; peers without handshake only a warning" {
+  FAKE_WG_DOWN=1 verify
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"WireGuard interface wg0 is not up"* ]]
+  FAKE_HANDSHAKES="a:never b:3" verify
+  [ "$status" -eq 0 ]
+  [[ $stderr == *"1 of 2 WireGuard peers without a handshake yet"* ]]
+}
+
+@test "90: k3s checks API, CA and pod -> compose service on every port (exact port match)" {
+  k3s_package
+  node_env k3s 51820 22 "node-exporter openbao" "53 5432" ""
+  printf 'COMPOSE_SERVICES="openbao"\n' >>"$PKG/node/node.env"
+  mkdir -p "$T/k3s/server/tls" && cp "$PKG/node/k3s-ca/vps1/server-ca.crt" "$T/k3s/server/tls/"
+  FAKE_POD_OK="5432" verify
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"verify OK: k3s API ready"* && $stderr == *"k3s uses the cluster CA from the wizard"* ]]
+  [[ $stderr == *"verify OK: pod -> 10.100.10.101:5432"* ]]
+  [[ $stderr == *"pod cannot reach 10.100.10.101:53"* ]] # ok:5432 must not count for 53
+  FAKE_POD_OK="53 5432" verify
+  [ "$status" -eq 0 ]
+}
+
+@test "90: k3s with a foreign CA or a dead API fails" {
+  k3s_package
+  mkdir -p "$T/k3s/server/tls" && echo other >"$T/k3s/server/tls/server-ca.crt"
+  verify
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"k3s server CA differs from the package"* ]]
+  FAKE_K3S_DOWN=1 verify
+  [[ $stderr == *"k3s API is not ready"* ]]
+}
+
+@test "90: in a container k3s and node_exporter checks are skipped with a message" {
+  k3s_package
+  FAKE_CONTAINER=1 verify
+  [ "$status" -eq 0 ]
+  [[ $stderr == *"skipped in container: k3s checks"* && $stderr == *"skipped in container: node_exporter check"* ]]
+}
+
+@test "90: CA bundle override must be an absolute path" {
+  HOMELAB_CA_BUNDLE='x/../y' step 90-verify
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"HOMELAB_CA_BUNDLE must be an absolute path"* ]]
 }

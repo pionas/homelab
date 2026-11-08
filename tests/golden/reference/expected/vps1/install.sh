@@ -7,7 +7,7 @@ set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 # Steps read node.env and secrets.env from here.
 export HOMELAB_NODE_DIR=$PWD
-IDS=(00 01 02 03 04 10 11 12-node-agent 20-coredns 21-step-ca 45-openbao 50-argocd)
+IDS=(00 01 02 03 04 10 11 12-node-agent 20-coredns 21-step-ca 45-openbao 50-argocd 90)
 declare -A ALIASES=(["03-ssh"]=03)
 STEPS=(
   ../common/00-preflight.sh
@@ -22,6 +22,7 @@ STEPS=(
   services/step-ca/install.sh
   services/openbao/install.sh
   services/argocd/install.sh
+  ../common/90-verify.sh
 )
 only='' args=()
 while (($#)); do
