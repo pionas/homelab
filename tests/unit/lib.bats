@@ -149,3 +149,30 @@ setup() {
   run in_lib "load_env '$BATS_TEST_TMPDIR/secrets.env'"
   [ -z "$output" ]
 }
+
+@test "write_file writes stdin atomically with the given mode" {
+  run in_lib "printf 'a\nb\n' | write_file '$BATS_TEST_TMPDIR/d/f' 640"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$BATS_TEST_TMPDIR/d/f")" = $'a\nb' ]
+  [ "$(stat -c %a "$BATS_TEST_TMPDIR/d/f")" = 640 ]
+  [ -z "$(find "$BATS_TEST_TMPDIR/d" -name 'f.*')" ]
+}
+
+@test "write_file in dry-run prints path and content, hides mode-600 content, writes nothing" {
+  run in_lib "DRY_RUN=1; echo 'Port 2222' | write_file '$BATS_TEST_TMPDIR/x.conf'; echo secret | write_file '$BATS_TEST_TMPDIR/k' 600"
+  [ "$status" -eq 0 ]
+  [[ $output == *"[dry-run] write $BATS_TEST_TMPDIR/x.conf (mode 644)"*"[dry-run]   Port 2222"* ]]
+  [[ $output == *"(content hidden)"* && $output != *secret* ]]
+  [ ! -e "$BATS_TEST_TMPDIR/x.conf" ]
+}
+
+@test "load_node_env needs HOMELAB_NODE_DIR and valid ports" {
+  run in_lib 'unset HOMELAB_NODE_DIR; load_node_env'
+  [ "$status" -eq 1 ]
+  [[ $output == *"HOMELAB_NODE_DIR is not set"* ]]
+  mkdir -p "$BATS_TEST_TMPDIR/n"
+  printf 'NODE_NAME=a\nWG_IP=10.100.10.101\nWG_PORT=70000\nSSH_PORT=22\nRUNTIME=compose\nOS=debian\n' >"$BATS_TEST_TMPDIR/n/node.env"
+  run in_lib "HOMELAB_NODE_DIR='$BATS_TEST_TMPDIR/n'; load_node_env"
+  [ "$status" -eq 1 ]
+  [[ $output == *"WG_PORT in node.env must be a port 1-65535, got: 70000"* ]]
+}

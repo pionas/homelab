@@ -109,3 +109,45 @@ load_env() {
     [[ -n ${!var:-} ]] || die "required variable $var is missing in $file"
   done
 }
+
+# write_file PATH [MODE] — writes stdin to PATH atomically (default mode 644). With --dry-run it
+# only prints what it would write; content of mode-600 files (keys, secrets) is never printed.
+write_file() {
+  local path=$1 mode=${2:-644} content
+  content=$(cat)
+  if ((DRY_RUN)); then
+    printf '[dry-run] write %s (mode %s)\n' "$path" "$mode"
+    if [[ $mode == 600 || $mode == 400 ]]; then
+      printf '[dry-run]   (content hidden)\n'
+    else
+      printf '%s\n' "$content" | sed 's/^/[dry-run]   /'
+    fi
+    return 0
+  fi
+  mkdir -p "${path%/*}"
+  local tmp
+  tmp=$(mktemp "$path.XXXXXX")
+  printf '%s\n' "$content" >"$tmp"
+  chmod "$mode" "$tmp"
+  mv -f "$tmp" "$path"
+}
+
+# Package layout: common/ (this file, steps, root_ca.crt) and the machine directory exported by
+# the generated install.sh as HOMELAB_NODE_DIR (node.env, secrets.env, wg0.conf).
+# shellcheck disable=SC2034 # used by the install steps that source this file
+HOMELAB_COMMON_DIR=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+# The WireGuard network every machine and admin device is on.
+# shellcheck disable=SC2034 # used by the install steps that source this file
+HOMELAB_WG_NET=10.100.10.0/24
+
+# load_node_env — node.env of this machine with every variable the common steps need.
+load_node_env() {
+  [[ -n ${HOMELAB_NODE_DIR:-} ]] || die "HOMELAB_NODE_DIR is not set; run the step through the machine's install.sh"
+  load_env "$HOMELAB_NODE_DIR/node.env" NODE_NAME WG_IP WG_PORT SSH_PORT RUNTIME OS
+  local p
+  for p in WG_PORT SSH_PORT; do
+    if ! [[ ${!p} =~ ^[0-9]+$ ]] || ((${!p} < 1 || ${!p} > 65535)); then
+      die "$p in node.env must be a port 1-65535, got: ${!p}"
+    fi
+  done
+}
