@@ -39,25 +39,32 @@ render_common() {
   local out_dir=$1 f
   rm -rf "$out_dir/common"
   mkdir -p "$out_dir/common"
-  for f in "$RENDER_COMMON_SRC"/*.sh; do cp -p "$f" "$out_dir/common/"; done
+  # Steps and the manifests they install (e.g. the argocd RBAC for k3s).
+  for f in "$RENDER_COMMON_SRC"/*.sh "$RENDER_COMMON_SRC"/*.yaml; do
+    [[ -e $f ]] && cp -p "$f" "$out_dir/common/"
+  done
   cp "$(ca_files_public "$out_dir")" "$out_dir/common/"
 }
 
 _render_node_env() {
-  local out_dir=$1 name=$2 services=$3 id ports='' public=''
+  local out_dir=$1 name=$2 services=$3 id ports='' public='' compose='' runtime
+  runtime=$(N=$name state_query '.machines[] | select(.name == strenv(N)) | .runtime')
   N=$name state_query '.machines[] | select(.name == strenv(N)) | ["NODE_NAME=" + .name, "WG_IP=" + .wg_ip,
     "WG_PORT=" + (.wg_port | tostring), "SSH_PORT=" + (.ssh_port | tostring), "RUNTIME=" + .runtime,
     "OS=" + .os] | .[]' >"$out_dir/$name/node.env"
   for id in $services; do
     ports+=" $(catalog_get "$id" PORTS)"
     public+=" $(catalog_get "$id" PUBLIC_PORTS)"
+    [[ $(_render_service_runtime "$id" "$runtime") == compose ]] && compose+=" $id"
   done
   # PORTS: reachable from the WireGuard network only; PUBLIC_PORTS: open to the internet (edge).
   # shellcheck disable=SC2086 # split the space-separated port lists
   ports=$(printf '%s\n' $ports | sort -nu | xargs)
   # shellcheck disable=SC2086
   public=$(printf '%s\n' $public | sort -nu | xargs)
-  printf 'SERVICES="%s"\nPORTS="%s"\nPUBLIC_PORTS="%s"\n' "$services" "$ports" "$public" >>"$out_dir/$name/node.env"
+  # COMPOSE_SERVICES: the ones run by Docker (step 10 is needed only when there is one).
+  printf 'SERVICES="%s"\nCOMPOSE_SERVICES="%s"\nPORTS="%s"\nPUBLIC_PORTS="%s"\n' \
+    "$services" "${compose# }" "$ports" "$public" >>"$out_dir/$name/node.env"
 }
 
 # _render_templates OUT NAME ID — copies catalog/<id>/ into services/<id>/; *.tpl files are rendered

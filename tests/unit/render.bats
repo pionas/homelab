@@ -166,3 +166,9 @@ listing() { tar -tzf "$OUT/$1.tar.gz"; }
   run "$pkg/vps2/install.sh" --step 03-ssh
   [ "$output" = "03-ufw " ]
 }
+
+@test "node.env: COMPOSE_SERVICES lists only services run by Docker" {
+  grep -qx 'COMPOSE_SERVICES="openbao"' "$OUT/vps1/node.env"
+  grep -qx 'COMPOSE_SERVICES=""' "$OUT/vps3/node.env"
+  grep -qx 'COMPOSE_SERVICES="node-agent traefik"' "$OUT/edge/node.env"
+}

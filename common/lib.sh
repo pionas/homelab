@@ -166,7 +166,7 @@ HOMELAB_COMMON_DIR=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 # shellcheck disable=SC2034 # used by the install steps that source this file
 HOMELAB_WG_NET=10.100.10.0/24
 
-_NODE_ENV_KEYS='NODE_NAME|WG_IP|WG_PORT|SSH_PORT|RUNTIME|OS|SERVICES|PORTS|PUBLIC_PORTS'
+_NODE_ENV_KEYS='NODE_NAME|WG_IP|WG_PORT|SSH_PORT|RUNTIME|OS|SERVICES|COMPOSE_SERVICES|PORTS|PUBLIC_PORTS'
 
 _valid_port() { [[ $1 =~ ^[1-9][0-9]{0,4}$ ]] && (($1 <= 65535)); }
 
@@ -189,7 +189,12 @@ load_node_env() {
   done
   [[ $RUNTIME =~ ^(compose|k3s)$ ]] || _node_bad "RUNTIME must be compose or k3s, got: $RUNTIME"
   [[ $OS =~ ^(debian|ubuntu)$ ]] || _node_bad "OS must be debian or ubuntu, got: $OS"
-  [[ ${SERVICES:-} =~ ^([a-z0-9]+(-[a-z0-9]+)*( |$))*$ ]] || _node_bad "SERVICES must be service ids, got: $SERVICES"
+  for p in SERVICES COMPOSE_SERVICES; do
+    [[ ${!p:-} =~ ^([a-z0-9]+(-[a-z0-9]+)*( |$))*$ ]] || _node_bad "$p must be service ids, got: ${!p}"
+  done
+  for bad in ${COMPOSE_SERVICES:-}; do
+    [[ " ${SERVICES:-} " == *" $bad "* ]] || _node_bad "COMPOSE_SERVICES has $bad, which is not in SERVICES"
+  done
   for p in PORTS PUBLIC_PORTS; do
     for bad in ${!p:-}; do
       _valid_port "$bad" || _node_bad "$p must list ports 1-65535, got: $bad"

@@ -396,3 +396,10 @@ before() {
   [[ $stderr == *"ignoring malformed SSH_CONNECTION"* ]]
   [[ $output != *";id"* ]]
 }
+
+@test "security: COMPOSE_SERVICES must be service ids that are also in SERVICES" {
+  printf 'COMPOSE_SERVICES="evil"\n' >>"$PKG/node/node.env"
+  step 03-ufw
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"COMPOSE_SERVICES has evil, which is not in SERVICES"* ]]
+}
