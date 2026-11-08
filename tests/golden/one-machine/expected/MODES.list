@@ -13,6 +13,9 @@
 775 common/02-wireguard.sh
 775 common/03-ufw.sh
 775 common/04-ca-trust.sh
+775 common/10-docker.sh
+775 common/11-k3s.sh
+664 common/argocd-rbac.yaml
 664 common/lib.sh
 600 common/root_ca.crt
 700 edge

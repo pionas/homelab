@@ -455,3 +455,92 @@ before() {
   [ "$status" -eq 1 ]
   [[ $stderr == *"unexpected dpkg architecture"* ]]
 }
+
+# --- 11 k3s ---------------------------------------------------------------------
+
+# k3s_package — the cluster CA files the wizard puts into a k3s machine's package.
+k3s_package() {
+  local d=$PKG/node/k3s-ca/vps1 f
+  mkdir -p "$d/etcd"
+  for f in server-ca client-ca request-header-ca etcd/peer-ca etcd/server-ca; do
+    echo "$f cert" >"$d/$f.crt"
+    echo "$f key" >"$d/$f.key"
+  done
+  echo key >"$d/service.key"
+  node_env k3s 51820 22 "node-exporter app-cluster" "9100" ""
+  export HOMELAB_K3S_DATA_DIR=$T/k3s
+}
+
+@test "11: cluster CAs and config before k3s is installed; node-ip/advertise-address = WG address" {
+  k3s_package
+  step 11-k3s
+  [ "$status" -eq 0 ]
+  before "install -m 600 $PKG/node/k3s-ca/vps1/server-ca.key $T/k3s/server/tls/server-ca.key" 'sh .*k3s-install'
+  before "install -m 644 $PKG/node/k3s-ca/vps1/etcd/peer-ca.crt $T/k3s/server/tls/etcd/peer-ca.crt" 'sh .*k3s-install'
+  before 'service.key' 'sh .*k3s-install'
+  before 'write /etc/rancher/k3s/config.yaml' 'sh .*k3s-install'
+  [[ $output == *"[dry-run]   node-ip: 10.100.10.101"* && $output == *"[dry-run]   advertise-address: 10.100.10.101"* ]]
+  [[ $output == *"cluster-cidr: 10.42.0.0/16"* && $output == *"service-cidr: 10.43.0.0/16"* ]]
+  [[ $output != *traefik* ]]
+  [[ $output != *0.0.0.0* ]]
+}
+
+@test "11: argocd RBAC manifest goes to the auto-deploy directory before k3s starts" {
+  k3s_package
+  step 11-k3s
+  before "install -m 600 $PKG/common/argocd-rbac.yaml $T/k3s/server/manifests/homelab-argocd-rbac.yaml" 'sh .*k3s-install'
+}
+
+@test "11: pinned installer from the k3s tag, checksum verified before it runs" {
+  k3s_package
+  step 11-k3s
+  before 'curl .*https://raw.githubusercontent.com/k3s-io/k3s/v1.36.5%2Bk3s1/install.sh' 'verify sha256'
+  before 'verify sha256 .*k3s-install-v1.36.5\+k3s1.sh = 46177d4c' 'INSTALL_K3S_VERSION=v1.36.5\+k3s1 INSTALL_K3S_EXEC=server sh'
+  [[ $output != *get.k3s.io* && $output != *"| sh"* ]]
+}
+
+@test "11: the edge (.100) disables the k3s Traefik" {
+  k3s_package
+  sed -i 's/^WG_IP=.*/WG_IP=10.100.10.100/' "$PKG/node/node.env"
+  step 11-k3s
+  [ "$status" -eq 0 ]
+  [[ $output == *"[dry-run]   disable:"*"[dry-run]     - traefik"* ]]
+}
+
+@test "11: compose machine skips k3s entirely" {
+  step 11-k3s
+  [ "$status" -eq 0 ]
+  [[ $output != *"[dry-run]"* ]]
+  [[ $stderr == *"vps1 runs compose, skipping k3s"* ]]
+}
+
+@test "11: missing CA in the package stops before anything changes" {
+  k3s_package
+  rm "$PKG/node/k3s-ca/vps1/client-ca.key"
+  step 11-k3s
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"missing $PKG/node/k3s-ca/vps1/client-ca.key"* ]]
+  [[ $output != *"[dry-run]"* ]]
+}
+
+@test "11: k3s with other CAs is never overwritten; with the same CAs nothing is copied" {
+  k3s_package
+  mkdir -p "$T/k3s/server/tls"
+  echo other >"$T/k3s/server/tls/server-ca.crt"
+  step 11-k3s
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"k3s already has other CAs"* ]]
+  [[ $output != *"install -m 600"* ]]
+  cp "$PKG/node/k3s-ca/vps1/server-ca.crt" "$PKG/node/k3s-ca/vps1/client-ca.crt" "$T/k3s/server/tls/"
+  step 11-k3s
+  [ "$status" -eq 0 ]
+  [[ $stderr == *"already uses the cluster CAs"* ]]
+  [[ $output != *"server/tls/server-ca.key"* ]]
+}
+
+@test "11: data dir override must be an absolute path" {
+  k3s_package
+  HOMELAB_K3S_DATA_DIR='../x' step 11-k3s
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"HOMELAB_K3S_DATA_DIR must be an absolute path"* ]]
+}

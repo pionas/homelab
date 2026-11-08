@@ -4,6 +4,9 @@ common/01-base.sh
 common/02-wireguard.sh
 common/03-ufw.sh
 common/04-ca-trust.sh
+common/10-docker.sh
+common/11-k3s.sh
+common/argocd-rbac.yaml
 common/lib.sh
 common/root_ca.crt
 vps4/
