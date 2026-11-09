@@ -113,7 +113,9 @@ before() {
 @test "01: packages, chrony, hostname, timezone, unattended-upgrades without reboot, fail2ban, ip_forward" {
   step 01-base
   [ "$status" -eq 0 ]
-  [[ $output == *"apt-get install -y chrony fail2ban unattended-upgrades wireguard"* ]]
+  [[ $output == *"apt-get install -y chrony fail2ban unattended-upgrades wireguard-tools ufw"* ]]
+  [[ $output != *" wireguard "* ]] # the metapackage could pull in another kernel
+  [[ $output == *"systemctl enable --now chrony"* ]]
   [[ $output == *"[dry-run] hostnamectl set-hostname vps1"* ]]
   [[ $output == *"[dry-run] timedatectl set-timezone Etc/UTC"* ]]
   [[ $output == *'Unattended-Upgrade::Automatic-Reboot "false";'* ]]
@@ -613,6 +615,7 @@ service() {
   FAKE_CONTAINER=1 step 01-base
   [ "$status" -eq 0 ]
   [[ $stderr == *"skipped in container: hostname vps1"* && $stderr == *"skipped in container: sysctl"* ]]
+  [[ $stderr == *"skipped in container: chrony"* && $output != *"enable --now chrony"* ]]
   [[ $output != *hostnamectl* && $output != *"sysctl -p"* ]]
   [[ $output == *"systemctl reload ssh"* ]] # everything else still runs
 }
