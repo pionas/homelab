@@ -155,6 +155,12 @@
 600 vps2/services/redis-exporter/docker-compose.yml
 755 vps2/services/redis-exporter/install.sh
 600 vps2/services/redis-exporter/redis-exporter.env
+700 vps2/services/redpanda
+600 vps2/services/redpanda/bootstrap.yaml
+600 vps2/services/redpanda/docker-compose.yml
+755 vps2/services/redpanda/install.sh
+600 vps2/services/redpanda/redpanda.env
+600 vps2/services/redpanda/redpanda.yaml
 700 vps2/services/rustfs
 600 vps2/services/rustfs/docker-compose.yml
 755 vps2/services/rustfs/install.sh

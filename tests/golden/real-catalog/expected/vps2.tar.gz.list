@@ -43,6 +43,12 @@ vps2/services/redis-exporter/
 vps2/services/redis-exporter/docker-compose.yml
 vps2/services/redis-exporter/install.sh
 vps2/services/redis-exporter/redis-exporter.env
+vps2/services/redpanda/
+vps2/services/redpanda/bootstrap.yaml
+vps2/services/redpanda/docker-compose.yml
+vps2/services/redpanda/install.sh
+vps2/services/redpanda/redpanda.env
+vps2/services/redpanda/redpanda.yaml
 vps2/services/rustfs/
 vps2/services/rustfs/docker-compose.yml
 vps2/services/rustfs/install.sh

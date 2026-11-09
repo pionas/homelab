@@ -299,7 +299,7 @@ listing() { tar -tzf "$OUT/$1.tar.gz"; }
 @test "moved ports reach compose files, exporters, UFW ports and Traefik's ACME server" {
   local out="$BATS_TEST_TMPDIR/moved"
   sed -e 's/M2_SERVICES="coredns step-ca openbao argocd"/&\nM2_PORTS="step-ca:9000=9443"/' \
-    -e 's/M3_SERVICES="postgresql mariadb valkey rustfs"/&\nM3_PORTS="postgresql:5432=5433 mariadb:3306=3307 valkey:6379=6380 postgres-exporter:9187=9188"/' \
+    -e 's/M3_SERVICES="[^"]*"/&\nM3_PORTS="postgresql:5432=5433 mariadb:3306=3307 valkey:6379=6380 postgres-exporter:9187=9188"/' \
     "$REPO_ROOT/tests/golden/real-catalog/answers.txt" >"$BATS_TEST_TMPDIR/a.txt"
   run "$REPO_ROOT/wizard.sh" --out "$out" --gitops-repo git@example.com:g.git --answers "$BATS_TEST_TMPDIR/a.txt"
   [ "$status" -eq 0 ]
@@ -309,7 +309,29 @@ listing() { tar -tzf "$OUT/$1.tar.gz"; }
   grep -qF -- '--web.listen-address=10.100.10.102:9188' "$s/postgres-exporter/docker-compose.yml"
   grep -qF -- '--mysqld.address=10.100.10.102:3307' "$s/mysqld-exporter/docker-compose.yml"
   grep -qF 'REDIS_ADDR: "redis://10.100.10.102:6380"' "$s/redis-exporter/docker-compose.yml"
-  grep -qx 'PORTS="3307 5433 6380 9000 9001 9100 9104 9121 9188"' "$out/vps2/node.env"
+  grep -qx 'PORTS="3307 5433 6380 8081 9000 9001 9092 9100 9104 9121 9188 9644"' "$out/vps2/node.env"
   grep -qF '"10.100.10.101:9443:9000"' "$out/vps1/services/step-ca/docker-compose.yml"
   grep -qF 'caServer: "https://10.100.10.101:9443/acme/acme/directory"' "$out/edge/services/traefik/traefik.yml"
+}
+
+@test "real catalog: redpanda listens and advertises the WG address (moved port too), SASL and auth on, password only in env" {
+  local out="$BATS_TEST_TMPDIR/rp"
+  sed 's/M3_SERVICES="[^"]*"/&\nM3_PORTS="redpanda:9092=19092"/' \
+    "$REPO_ROOT/tests/golden/real-catalog/answers.txt" >"$BATS_TEST_TMPDIR/a.txt"
+  run "$REPO_ROOT/wizard.sh" --out "$out" --gitops-repo git@example.com:g.git --answers "$BATS_TEST_TMPDIR/a.txt"
+  [ "$status" -eq 0 ]
+  local d="$out/vps2/services/redpanda" pw
+  [ "$(yq '.redpanda.kafka_api[0].address + ":" + (.redpanda.kafka_api[0].port | tostring)' "$d/redpanda.yaml")" = 10.100.10.102:19092 ]
+  [ "$(yq '.redpanda.advertised_kafka_api[0].address + ":" + (.redpanda.advertised_kafka_api[0].port | tostring)' "$d/redpanda.yaml")" = 10.100.10.102:19092 ]
+  [ "$(yq '.redpanda.kafka_api[0].authentication_method' "$d/redpanda.yaml")" = sasl ]
+  [ "$(yq '.schema_registry.schema_registry_api[0].authentication_method' "$d/redpanda.yaml")" = http_basic ]
+  [ "$(yq '.redpanda.rpc_server.address' "$d/redpanda.yaml")" = 127.0.0.1 ]
+  [ "$(yq '.enable_sasl' "$d/bootstrap.yaml")" = true ]
+  [ "$(yq '.admin_api_require_auth' "$d/bootstrap.yaml")" = true ]
+  [ "$(yq '.superusers[0]' "$d/bootstrap.yaml")" = root ]
+  pw=$(sed -n 's/^REDPANDA_ROOT_PASSWORD=//p' "$out/vps2/secrets.env")
+  run grep -rlF "$pw" "$d"
+  [ "$output" = "$d/redpanda.env" ]
+  run ! grep -rq '0\.0\.0\.0' "$d" --exclude=docker-compose.yml
+  grep -qx 'redpanda IN A 10.100.10.102' "$out/vps1/services/coredns/db.homelab.internal"
 }
