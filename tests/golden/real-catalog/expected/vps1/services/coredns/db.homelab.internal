@@ -1,6 +1,6 @@
 $ORIGIN homelab.internal.
 $TTL 300
-@ IN SOA ns.homelab.internal. hostmaster.homelab.internal. ( 2544260417 3600 600 86400 300 )
+@ IN SOA ns.homelab.internal. hostmaster.homelab.internal. ( 1385333978 3600 600 86400 300 )
 @ IN NS ns.homelab.internal.
 ns IN A 10.100.10.101
 edge IN A 10.100.10.100
@@ -10,5 +10,6 @@ vps3 IN A 10.100.10.103
 argo IN A 10.100.10.101
 grafana IN A 10.100.10.101
 bao IN A 10.100.10.101
+valkey IN A 10.100.10.102
 ca IN A 10.100.10.101
 e-konkursy IN A 10.100.10.100

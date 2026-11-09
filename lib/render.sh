@@ -185,9 +185,25 @@ render_dns_zone() {
   while read -r name ip; do printf '%s IN A %s\n' "$name" "$ip"; done <<<"$records"
 }
 
-# _render_service_extras DIR ID — files a service needs that are computed from the whole state.
+# render_valkey_acl MACHINE_DIR — Valkey users with SHA-256 password hashes (never the passwords):
+# the default user is off, DEFAULT may do anything but administration, VIEWER only reads. Rules apply
+# left to right and INFO is @dangerous, so the explicit grants come after -@dangerous.
+render_valkey_acl() {
+  _secrets_read "$1/secrets.env" || return 1
+  local app viewer
+  app=$(printf '%s' "${_SECRETS[VALKEY_DEFAULT_PASSWORD]}" | sha256sum | cut -d' ' -f1)
+  viewer=$(printf '%s' "${_SECRETS[VALKEY_VIEWER_PASSWORD]}" | sha256sum | cut -d' ' -f1)
+  printf 'user default off\n'
+  printf 'user %s on #%s ~* &* +@all -@admin\n' "${_SECRETS[VALKEY_DEFAULT_USERNAME]}" "$app"
+  printf 'user %s on #%s ~* resetchannels -@all +@read -@dangerous +info +ping +config|get +slowlog|get +latency|latest\n' \
+    "${_SECRETS[VALKEY_VIEWER_USERNAME]}" "$viewer"
+}
+
+# _render_service_extras DIR ID MACHINE_DIR — files a service needs that are computed from the
+# whole state or from the machine's secrets.
 _render_service_extras() {
   case $2 in
+    valkey) render_valkey_acl "$3" >"$1/users.acl" ;;
     coredns) render_dns_zone >"$1/db.$STATE_DOMAIN" ;;
     traefik)
       mkdir -p "$1/dynamic"
@@ -293,7 +309,7 @@ render_machine() {
   local id
   for id in "${services[@]}"; do
     _render_templates "$out_dir" "$name" "$id" || return 1
-    _render_service_extras "$out_dir/$name/services/$id" "$id" || return 1
+    _render_service_extras "$out_dir/$name/services/$id" "$id" "$out_dir/$name" || return 1
   done
   _render_install_sh "$name" "$runtime" "${services[@]}" >"$dir/install.sh"
   chmod 700 "$dir/install.sh"

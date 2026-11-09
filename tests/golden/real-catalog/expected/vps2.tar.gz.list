@@ -39,4 +39,13 @@ vps2/services/postgresql/initdb/
 vps2/services/postgresql/initdb/10-homelab-accounts.sh
 vps2/services/postgresql/install.sh
 vps2/services/postgresql/postgresql.env
+vps2/services/redis-exporter/
+vps2/services/redis-exporter/docker-compose.yml
+vps2/services/redis-exporter/install.sh
+vps2/services/redis-exporter/redis-exporter.env
+vps2/services/valkey/
+vps2/services/valkey/docker-compose.yml
+vps2/services/valkey/install.sh
+vps2/services/valkey/users.acl
+vps2/services/valkey/valkey.conf
 vps2/wg0.conf

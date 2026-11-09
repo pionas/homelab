@@ -29,6 +29,9 @@ Dokument uzupełnia „Dokumentację Architektury Rozproszonego Homelaba”. Opi
 | Port SSH | Per maszyna (`ssh_port` w stanie), domyślnie `22`, zmieniany w odpowiedziach kreatora. Używany w `sshd_config` (krok 01) i UFW (krok 03). |
 | Priorytety eksporterów | Wszystkie eksportery (`auto`) mają priorytet **39** — po warstwie danych (30–35), przed edge (40). `node-exporter` (`always`) to usługa hosta z priorytetem 12. |
 | Znaczniki kroków | Kroki `common/` — `done/NN`; kroki usług — `done/NN-id` (np. `30-postgresql`), więc usługi o tym samym priorytecie się nie zderzają. Wyjątek w `common/`: `03-ssh`. |
+| Magazyn obiektów (S3) | **RustFS** (Apache-2.0) zamiast MinIO — repozytorium MinIO zarchiwizowane (ostatnie wydanie 2025-10-15, obraz usunięty z Docker Hub); RustFS jest pomyślany jako zamiennik MinIO. Alarik odrzucony (wersja beta), Garage (AGPL), SeaweedFS (cięższy), Versity Gateway (mniej funkcji). |
+| Pamięć podręczna | **Valkey** (BSD-3) zamiast Redis 8 (RSALv2/SSPLv1/AGPLv3) — ten sam protokół i ACL; spójne z wyborem OpenBao zamiast Vault ze względu na licencję. |
+| Broker | **Redpanda** zostaje mimo licencji BSL/RCL (kod dostępny, nie open source): używanie we własnym systemie jest dozwolone, ograniczenie dotyczy oferowania go jako usługi streamingowej. Alternatywa przy zmianie: Apache Kafka (KRaft). |
 | Konta tylko do odczytu | Jedna nazwa roli: **`VIEWER`** (panele i eksportery, osobne konta per usługa). |
 | Język kreatora | **Bash** (`whiptail`, fallback na `read`). |
 
@@ -122,7 +125,7 @@ PLACEMENT=""            # edge = tylko i obowiązkowo na edge; puste = dowolna m
 PRIORITY=30             # niższy = wcześniej
 REQUIRES=""             # usługi, które muszą istnieć w homelabie
 SECRETS="ROOT DEFAULT VIEWER"
-USES_SECRETS=""         # sekrety innych usług, np. "REDIS:VIEWER"
+USES_SECRETS=""         # sekrety innych usług, np. "VALKEY:VIEWER"
 PORTS="5432"            # bindowane na adres WG
 PUBLIC_PORTS=""         # bindowane publicznie; dozwolone tylko przy PLACEMENT=edge
 AUTO_ADD="postgres-exporter"
@@ -140,8 +143,8 @@ AUTO_ADD="postgres-exporter"
 | 21 | step-ca | single | compose, k3s | `STEPCA_DEFAULT` (provisioner) | wymagany; CA z kreatora |
 | 30 | PostgreSQL | single | compose | ROOT, DEFAULT, VIEWER | + postgres-exporter (auto, 39, konto VIEWER z `pg_monitor`) |
 | 31 | MariaDB | single | compose | ROOT, DEFAULT, VIEWER | + mysqld-exporter (auto, 39) |
-| 32 | MinIO | single | compose | ROOT | metryki natywne |
-| 33 | Redis | single | compose | DEFAULT, VIEWER | ACL; + redis-exporter (auto, 39) |
+| 32 | RustFS (S3) | single | compose | ROOT | metryki natywne; zamiast MinIO (decyzja „Magazyn obiektów”) |
+| 33 | Valkey | single | compose | DEFAULT, VIEWER | ACL; + redis-exporter (auto, 39; obsługuje Valkey); zamiast Redis (decyzja „Pamięć podręczna”) |
 | 34 | Redpanda | single | compose | ROOT | SASL, `advertise_kafka_addr` = adres WG; Schema Registry wbudowane |
 | 35 | Typesense | single | compose | ROOT (API key) | |
 | 40 | Traefik standalone | single, `PLACEMENT=edge` | compose | — | ACME → step-ca; `PUBLIC_PORTS="80 443"` |
@@ -161,7 +164,7 @@ Kolejność maszyn wynika z najniższego priorytetu ich usług: maszyna z DNS/st
 ## 5. Domeny i certyfikaty
 
 ### Etap VirtualBox
-* Domena **`homelab.internal`**: hosty (`edge.homelab.internal`, `vps1.homelab.internal`…), panele (`argo.`, `grafana.`, `redpanda.`, `redis.`, `bao.homelab.internal`), aplikacje testowe przez edge (np. `e-konkursy.homelab.internal`).
+* Domena **`homelab.internal`**: hosty (`edge.homelab.internal`, `vps1.homelab.internal`…), panele (`argo.`, `grafana.`, `redpanda.`, `valkey.`, `bao.homelab.internal`), aplikacje testowe przez edge (np. `e-konkursy.homelab.internal`).
   * `.local` odrzucona — zarezerwowana dla mDNS (RFC 6762).
 * DNS wewnętrzny (CoreDNS) serwuje strefę `homelab.internal`.
 * CA: root + intermediate generowane przez kreator; **step-ca** podpisuje certyfikaty intermediate i udostępnia endpoint ACME. Traefik używa resolvera ACME z `caServer` wskazującym na step-ca — docelowo zmienia się tylko adres CA.
@@ -177,12 +180,12 @@ Kolejność maszyn wynika z najniższego priorytetu ich usług: maszyna z DNS/st
 * Środowisko: Docker + compose lub k3s.
 * Edge: Traefik standalone.
 * Infrastruktura: DNS wewnętrzny, step-ca, OpenBao, ArgoCD (+ aplikacja główna app-of-apps, Secrety klastrów).
-* Dane: Redpanda, Redis (ACL), Typesense, PostgreSQL, MariaDB, MinIO + eksportery.
+* Dane: Redpanda, Valkey (ACL), Typesense, PostgreSQL, MariaDB, RustFS + eksportery.
 * Wszystkie porty usług bindowane na adres WireGuard.
 
 ### ArgoCD (repo `homelab-gitops`)
 * Fundament: External Secrets Operator (pierwsza aplikacja, połączenie z OpenBao).
-* Narzędzia: kube-prometheus-stack (Prometheus, Grafana, Alertmanager), konsola Redpandy / Kafka-UI (read-only), Redis-UI, Spring Cloud Config Server.
+* Narzędzia: kube-prometheus-stack (Prometheus, Grafana, Alertmanager), konsola Redpandy / Kafka-UI (read-only), Valkey-UI, Spring Cloud Config Server.
 * Strony i frontend: pionki.online, pionas.dev, excellent-app.pl, aplikacje wspólne, web-app i BFF e-konkursy.
 * Mikroserwisy e-konkursy: konkursy, forum, auth, użytkownicy.
 * Klaster zapasowy: kopie aplikacji bezstanowych.
