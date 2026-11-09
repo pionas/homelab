@@ -1,0 +1,16 @@
+# node_exporter for a compose machine. Host network so it sees the host's interfaces; it listens
+# only on the WireGuard address (Docker publishes no port, so its iptables rules are not involved).
+services:
+  node-exporter:
+    image: quay.io/prometheus/node-exporter:v1.12.1
+    restart: unless-stopped
+    network_mode: host
+    pid: host
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - "/:/host:ro,rslave"
+    command:
+      - "--path.rootfs=/host"
+      - "--web.listen-address=10.100.10.100:9100"

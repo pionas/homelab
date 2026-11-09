@@ -180,14 +180,14 @@ listing() { tar -tzf "$OUT/$1.tar.gz"; }
 @test "real catalog: node-exporter listens on each machine's WG address; compose and k3s files are valid" {
   type -P kubeconform >/dev/null || skip "kubeconform not installed"
   local out="$BATS_TEST_TMPDIR/real"
-  printf 'MACHINES=2\nDEVICES="laptop:linux"\nM1_NAME=edge M1_ENDPOINT=192.168.56.10\nM2_NAME=vps1 M2_ENDPOINT=192.168.56.11 M2_ARGOCD=yes M2_SERVICES="openbao argocd"\n' \
+  printf 'MACHINES=2\nDEVICES="laptop:linux"\nM1_NAME=edge M1_ENDPOINT=192.168.56.10\nM2_NAME=vps1 M2_ENDPOINT=192.168.56.11 M2_ARGOCD=yes M2_SERVICES="coredns step-ca openbao argocd"\n' \
     >"$BATS_TEST_TMPDIR/a.txt"
   run "$REPO_ROOT/wizard.sh" --out "$out" --gitops-repo git@example.com:g.git --answers "$BATS_TEST_TMPDIR/a.txt"
   [ "$status" -eq 0 ]
   grep -qF -- '--web.listen-address=10.100.10.100:9100' "$out/edge/services/node-exporter/docker-compose.yml"
   grep -qF -- '--web.listen-address=10.100.10.101:9100' "$out/vps1/services/node-exporter/node-exporter.yaml"
   run ! grep -rq '0\.0\.0\.0' "$out/edge/services/node-exporter" "$out/vps1/services/node-exporter"
-  grep -qx 'COMPOSE_SERVICES="openbao"' "$out/vps1/node.env"
+  grep -qx 'COMPOSE_SERVICES="coredns step-ca openbao"' "$out/vps1/node.env"
   docker compose -f "$out/edge/services/node-exporter/docker-compose.yml" config -q
   kubeconform -strict -summary "$out/vps1/services/node-exporter/node-exporter.yaml" "$out/common/argocd-rbac.yaml"
 }

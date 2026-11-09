@@ -10,14 +10,12 @@ require_root
 load_node_env
 
 SERVICE_ID=node-exporter
-COMPOSE_DIR=/opt/homelab/$SERVICE_ID
+COMPOSE_DIR=$HOMELAB_COMPOSE_ROOT/$SERVICE_ID
 
 install_compose() {
   run install -d -m 700 "$COMPOSE_DIR"
   run install -m 600 "$SERVICE_DIR/docker-compose.yml" "$COMPOSE_DIR/docker-compose.yml"
-  if in_container; then container_skip "docker compose up (no dockerd in the container)"; else
-    run docker compose -f "$COMPOSE_DIR/docker-compose.yml" up -d
-  fi
+  compose_up "$SERVICE_ID"
 }
 
 install_k3s() {
@@ -26,13 +24,9 @@ install_k3s() {
 }
 
 install_node_exporter() {
-  if [[ " ${COMPOSE_SERVICES:-} " == *" $SERVICE_ID "* ]]; then
-    install_compose
-  elif [[ $RUNTIME == k3s ]]; then
-    install_k3s
-  else
-    die "$SERVICE_ID is neither in COMPOSE_SERVICES nor on a k3s machine: regenerate the package"
-  fi
+  local runtime
+  runtime=$(service_runtime "$SERVICE_ID") || exit 1
+  if [[ $runtime == compose ]]; then install_compose; else install_k3s; fi
   log_info "node_exporter on $WG_IP:9100 (WireGuard only)"
 }
 

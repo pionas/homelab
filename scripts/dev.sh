@@ -24,9 +24,10 @@ Usage: scripts/dev.sh <command>...
 Commands (run in the given order, stop at the first failure):
   lint       shellcheck + shfmt -d -i 2 -ci on all tracked shell files and service.conf
   test       bats tests/unit
-  golden     run the wizard on tests/golden/*/answers.txt and compare with expected/
+  golden     run the wizard on tests/golden/*/answers.txt (catalog: the scenario's file
+             `catalog` or tests/fixtures/catalog-wizard) and compare with expected/
              (GOLDEN_UPDATE=1 replaces expected/ with the new result)
-  validate   docker compose config, kubeconform -strict and yq on the golden scenarios' output
+  validate   docker compose config, kubeconform -strict, yq (YAML, JSON) on the golden scenarios' output
   container  install steps for real in a disposable Debian systemd container (tests/container)
   help       show this help
 EOF
@@ -82,11 +83,16 @@ export -f _golden_next golden_secret golden_wg_key
 
 # _golden_generate SCENARIO WORK — runs the wizard on SCENARIO/answers.txt into WORK/out.
 _golden_generate() {
-  local scenario=$1 work=$2
+  local scenario=$1 work=$2 catalog=$GOLDEN_CATALOG
+  # A scenario may name another catalog (repo-relative directory) in its file `catalog`.
+  if [[ -f $scenario/catalog ]]; then
+    catalog=$(<"$scenario/catalog")
+    [[ $catalog =~ ^[a-z0-9/_-]+$ && -d $catalog ]] || die "$scenario/catalog: not a repo directory: $catalog"
+  fi
   echo 0 >"$work/secret-n"
   echo 0 >"$work/wg-n"
   GOLDEN_DIR=$work SECRETS_GENERATOR=golden_secret WG_KEYGEN=golden_wg_key ./wizard.sh \
-    --catalog "$GOLDEN_CATALOG" --gitops-repo "$GOLDEN_REPO" --answers "$scenario/answers.txt" \
+    --catalog "$catalog" --gitops-repo "$GOLDEN_REPO" --answers "$scenario/answers.txt" \
     --out "$work/out" >"$work/wizard.log" 2>&1 || {
     cat "$work/wizard.log" >&2
     log_error "$scenario: wizard failed"
@@ -169,6 +175,12 @@ cmd_validate() {
         manifests+=("$f")
       fi
     done < <(find "$work/out" -type f \( -name '*.yaml' -o -name '*.yml' \) | sort)
+    while IFS= read -r f; do
+      yq -p json '.' "$f" >/dev/null || {
+        log_error "invalid JSON: ${f#"$work/out/"}"
+        rc=1
+      }
+    done < <(find "$work/out" -type f -name '*.json' | sort)
     if ((${#manifests[@]})); then
       kubeconform -strict -summary -cache "$(mkdir -p "$HOME/.cache/kubeconform" && echo "$HOME/.cache/kubeconform")" \
         "${manifests[@]}" || rc=1

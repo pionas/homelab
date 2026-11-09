@@ -1,0 +1,18 @@
+# Internal DNS for the WireGuard network. Host network, so CoreDNS binds the WireGuard address
+# itself (Corefile `bind`) and never 0.0.0.0, next to systemd-resolved on 127.0.0.53.
+services:
+  coredns:
+    image: coredns/coredns:1.15.0
+    restart: unless-stopped
+    network_mode: host
+    # Port 53 needs NET_BIND_SERVICE, which Docker gives only to root in the container; it is the
+    # only capability left.
+    user: "0:0"
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - "./Corefile:/etc/coredns/Corefile:ro"
+      - "./db.homelab.internal:/etc/coredns/db.homelab.internal:ro"
+    command: ["-conf", "/etc/coredns/Corefile"]

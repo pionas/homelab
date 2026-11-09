@@ -51,9 +51,10 @@ render_common() {
 _render_node_env() {
   local out_dir=$1 name=$2 services=$3 id ports='' public='' compose='' runtime
   runtime=$(N=$name state_query '.machines[] | select(.name == strenv(N)) | .runtime')
+  printf 'DOMAIN=%s\n' "$STATE_DOMAIN" >"$out_dir/$name/node.env"
   N=$name state_query '.machines[] | select(.name == strenv(N)) | ["NODE_NAME=" + .name, "WG_IP=" + .wg_ip,
     "WG_PORT=" + (.wg_port | tostring), "SSH_PORT=" + (.ssh_port | tostring), "RUNTIME=" + .runtime,
-    "OS=" + .os] | .[]' >"$out_dir/$name/node.env"
+    "OS=" + .os] | .[]' >>"$out_dir/$name/node.env"
   for id in $services; do
     ports+=" $(catalog_get "$id" PORTS)"
     public+=" $(catalog_get "$id" PUBLIC_PORTS)"
@@ -93,6 +94,38 @@ _render_templates() {
       cp -p "$f" "$dst/$rel"
     fi
   done < <(find "$src" -type f | sort)
+}
+
+# _render_dns_records — "name ip" for every machine and every placed panel name.
+_render_dns_records() {
+  local entry ip
+  state_query '.machines[] | .name + " " + .wg_ip'
+  for entry in $STATE_DNS_NAMES; do
+    ip=$(S=${entry#*:} state_query '[.machines[] | select(.services[] == strenv(S)) | .wg_ip][0] // ""')
+    [[ -n $ip ]] && printf '%s %s\n' "${entry%%:*}" "$ip"
+  done
+  return 0
+}
+
+# render_dns_zone — the zone file for $STATE_DOMAIN. The serial is a checksum of the records, so it
+# changes exactly when they do and the output stays reproducible.
+render_dns_zone() {
+  local records serial ns name ip
+  records=$(_render_dns_records)
+  serial=$(cksum <<<"$records" | cut -d' ' -f1)
+  ns=$(state_query '[.machines[] | select(.services[] == "coredns") | .wg_ip][0] // .machines[0].wg_ip')
+  # shellcheck disable=SC2016 # $ORIGIN and $TTL are zone file directives
+  printf '$ORIGIN %s.\n$TTL 300\n' "$STATE_DOMAIN"
+  printf '@ IN SOA ns.%s. hostmaster.%s. ( %s 3600 600 86400 300 )\n' "$STATE_DOMAIN" "$STATE_DOMAIN" "$serial"
+  printf '@ IN NS ns.%s.\nns IN A %s\n' "$STATE_DOMAIN" "$ns"
+  while read -r name ip; do printf '%s IN A %s\n' "$name" "$ip"; done <<<"$records"
+}
+
+# _render_service_extras DIR ID — files a service needs that are computed from the whole state.
+_render_service_extras() {
+  case $2 in
+    coredns) render_dns_zone >"$1/db.$STATE_DOMAIN" ;;
+  esac
 }
 
 # _render_install_sh NAME RUNTIME SERVICE... — the machine's install.sh on stdout.
@@ -192,6 +225,7 @@ render_machine() {
   local id
   for id in "${services[@]}"; do
     _render_templates "$out_dir" "$name" "$id" || return 1
+    _render_service_extras "$out_dir/$name/services/$id" "$id" || return 1
   done
   _render_install_sh "$name" "$runtime" "${services[@]}" >"$dir/install.sh"
   chmod 700 "$dir/install.sh"

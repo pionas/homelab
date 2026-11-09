@@ -45,6 +45,7 @@ vps1/services/
 vps1/services/argocd/
 vps1/services/argocd/namespace.yaml
 vps1/services/coredns/
+vps1/services/coredns/db.homelab.internal
 vps1/services/node-agent/
 vps1/services/openbao/
 vps1/services/step-ca/
