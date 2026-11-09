@@ -7,7 +7,7 @@ set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 # Steps read node.env and secrets.env from here.
 export HOMELAB_NODE_DIR=$PWD
-IDS=(00 01 02 03 04 10 12-node-exporter 30-postgresql 31-mariadb 32-rustfs 33-valkey 34-redpanda 39-mysqld-exporter 39-postgres-exporter 39-redis-exporter 90)
+IDS=(00 01 02 03 04 10 12-node-exporter 30-postgresql 31-mariadb 32-rustfs 33-valkey 34-redpanda 35-typesense 39-mysqld-exporter 39-postgres-exporter 39-redis-exporter 90)
 declare -A ALIASES=(["03-ssh"]=03)
 STEPS=(
   ../common/00-preflight.sh
@@ -22,6 +22,7 @@ STEPS=(
   services/rustfs/install.sh
   services/valkey/install.sh
   services/redpanda/install.sh
+  services/typesense/install.sh
   services/mysqld-exporter/install.sh
   services/postgres-exporter/install.sh
   services/redis-exporter/install.sh

@@ -1057,3 +1057,16 @@ redpanda_package() {
   [[ $stderr == *"without SASL"* ]]
   [[ $output != *"[dry-run]"* ]]
 }
+
+# --- 35 typesense (catalog service) -----------------------------------------------------
+
+@test "35: typesense installs its env file (600) and a data dir owned by the unprivileged user" {
+  service_package typesense docker-compose.yml typesense.env
+  node_env compose 51820 22 "typesense" "8108" ""
+  printf 'COMPOSE_SERVICES="typesense"\n' >>"$PKG/node/node.env"
+  service typesense
+  [ "$status" -eq 0 ]
+  [[ $output == *"install -D -m 600 $PKG/node/services/typesense/typesense.env /opt/homelab/typesense/typesense.env"* ]]
+  before 'install -d -m 700 -o 10000 -g 10000 /var/lib/homelab/data/typesense' \
+    'docker compose -f /opt/homelab/typesense/docker-compose.yml up -d'
+}

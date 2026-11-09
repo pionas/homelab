@@ -5,7 +5,7 @@ MACHINES=4
 DEVICES="laptop:linux telefon:android"
 M1_NAME=edge M1_ENDPOINT=192.168.56.10 M1_SERVICES="traefik"
 M2_NAME=vps1 M2_ENDPOINT=192.168.56.11 M2_ARGOCD=yes M2_SERVICES="coredns step-ca openbao argocd"
-M3_NAME=vps2 M3_ENDPOINT=192.168.56.12 M3_WG_PORT=443 M3_SSH_PORT=2222 M3_SERVICES="postgresql mariadb valkey rustfs redpanda"
+M3_NAME=vps2 M3_ENDPOINT=192.168.56.12 M3_WG_PORT=443 M3_SSH_PORT=2222 M3_SERVICES="postgresql mariadb valkey rustfs redpanda typesense"
 M4_NAME=vps3 M4_ENDPOINT=192.168.56.13 M4_ARGOCD=yes
 # Public routes: one application with failover to vps1, one without.
 ROUTES="e-konkursy.homelab.internal:vps3:vps1 pionas.dev:vps3"
