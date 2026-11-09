@@ -21,9 +21,8 @@ install_valkey() {
   grep -qx 'user default off' "$SERVICE_DIR/users.acl" 2>/dev/null ||
     die "$SERVICE_DIR/users.acl missing or the default user is not off: regenerate the package"
   install_service_files "$SERVICE_ID" docker-compose.yml valkey.conf users.acl
-  # Password hashes: readable only by the server.
+  # Password hashes (copied with mode 600): readable only by the server.
   run chown "$VALKEY_UID:$VALKEY_UID" "$HOMELAB_COMPOSE_ROOT/$SERVICE_ID/users.acl"
-  run chmod 600 "$HOMELAB_COMPOSE_ROOT/$SERVICE_ID/users.acl"
   run install -d -m 700 "$DATA_DIR"
   compose_up "$SERVICE_ID"
   log_info "Valkey on $WG_IP:6379 (ACL users only, data in $DATA_DIR)"
