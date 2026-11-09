@@ -35,14 +35,22 @@ apt_noninteractive() { run env DEBIAN_FRONTEND=noninteractive apt-get "$@"; }
 base_packages() {
   apt_noninteractive update
   apt_noninteractive -y upgrade
-  apt_noninteractive install -y chrony fail2ban unattended-upgrades wireguard wireguard-tools ufw \
+  # wireguard-tools only: the module is in the kernel (5.6+), while the `wireguard` metapackage can
+  # pull in another kernel image.
+  apt_noninteractive install -y chrony fail2ban unattended-upgrades wireguard-tools ufw \
     ca-certificates curl sudo openssl
 }
 
 base_system() {
-  run hostnamectl set-hostname "$NODE_NAME"
+  if in_container; then container_skip "hostname $NODE_NAME (set by the container runtime)"; else
+    run hostnamectl set-hostname "$NODE_NAME"
+  fi
   run timedatectl set-timezone "$TIMEZONE"
-  run systemctl enable --now chrony
+  if in_container; then
+    container_skip "chrony (a container cannot set the host clock)"
+  else
+    run systemctl enable --now chrony
+  fi
   write_file /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
 APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
@@ -64,7 +72,10 @@ EOF
   run systemctl enable fail2ban
   run systemctl restart fail2ban
   echo 'net.ipv4.ip_forward = 1' | write_file /etc/sysctl.d/90-homelab.conf
-  run sysctl --system
+  # Only this file: `sysctl --system` would also re-apply every other sysctl.d file.
+  if in_container; then container_skip "sysctl (read-only /proc/sys)"; else
+    run sysctl -p /etc/sysctl.d/90-homelab.conf
+  fi
 }
 
 admin_user() {

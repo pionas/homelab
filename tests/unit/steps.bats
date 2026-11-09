@@ -21,6 +21,8 @@ setup() {
   fakes
   export HOMELAB_STATE_DIR=$T/state HOMELAB_NODE_DIR=$PKG/node HOMELAB_OS_RELEASE=$T/os-release
   export HOMELAB_ADMIN_KEYS=$T/authorized_keys
+  # An empty sysfs: whether the wireguard module is there is decided by the modinfo fake.
+  export HOMELAB_SYSFS=$T/sys
   unset SSH_CONNECTION
 }
 
@@ -36,6 +38,7 @@ fake() { printf '#!/usr/bin/env bash\n%s\n' "$2" >"$T/bin/$1" && chmod +x "$T/bi
 fakes() {
   fake sshd 'case $1 in -T) echo "port ${FAKE_SSHD_PORT:-22}" ;; esac'
   fake getent '[[ -z ${FAKE_NO_NET:-} ]]'
+  fake systemd-detect-virt '[[ -n ${FAKE_CONTAINER:-} ]]'
   fake dpkg '[[ $1 == --print-architecture ]] && echo "${FAKE_ARCH:-amd64}"'
   fake modinfo '[[ -z ${FAKE_NO_WG_MODULE:-} ]]'
   fake id '[[ $1 == -u && -n ${FAKE_ADMIN_EXISTS:-} ]] && echo 1000 || exit 1'
@@ -46,7 +49,12 @@ fakes() {
     case "$3" in
       latest-handshakes) for e in ${FAKE_HANDSHAKES:-}; do a=${e#*:}; [[ $a == never ]] && t=0 || t=$((now - a)); printf "%s\t%s\n" "${e%%:*}" "$t"; done ;;
       allowed-ips) for e in ${FAKE_PEERS:-}; do printf "%s\t%s/32\n" "${e%%:*}" "${e#*:}"; done ;;
+      listen-port) echo "${FAKE_WG_LISTEN:-51820}" ;;
     esac'
+  fake ufw '[[ $1 == status && -z ${FAKE_UFW_INACTIVE:-} ]] && echo "Status: active"'
+  fake curl '[[ -z ${FAKE_NO_METRICS:-} ]] && echo "node_exporter_build_info{version=\"1\"} 1"'
+  # k3s kubectl: get --raw (FAKE_K3S_DOWN fails it) and run (prints ok:PORT for FAKE_POD_OK ports).
+  fake k3s 'case "$2" in get) [[ -z ${FAKE_K3S_DOWN:-} ]] ;; run) for p in ${FAKE_POD_OK:-}; do echo "ok:$p"; done ;; esac'
 }
 
 # step NAME [ARG...] — runs common/NAME.sh with --dry-run and the fakes first in PATH.
@@ -105,12 +113,15 @@ before() {
 @test "01: packages, chrony, hostname, timezone, unattended-upgrades without reboot, fail2ban, ip_forward" {
   step 01-base
   [ "$status" -eq 0 ]
-  [[ $output == *"apt-get install -y chrony fail2ban unattended-upgrades wireguard"* ]]
+  [[ $output == *"apt-get install -y chrony fail2ban unattended-upgrades wireguard-tools ufw"* ]]
+  [[ $output != *" wireguard "* ]] # the metapackage could pull in another kernel
+  [[ $output == *"systemctl enable --now chrony"* ]]
   [[ $output == *"[dry-run] hostnamectl set-hostname vps1"* ]]
   [[ $output == *"[dry-run] timedatectl set-timezone Etc/UTC"* ]]
   [[ $output == *'Unattended-Upgrade::Automatic-Reboot "false";'* ]]
   [[ $output == *"ignoreip = 127.0.0.1/8 ::1 10.100.10.0/24"* ]]
   [[ $output == *"net.ipv4.ip_forward = 1"* ]]
+  [[ $output == *"[dry-run] sysctl -p /etc/sysctl.d/90-homelab.conf"* && $output != *"sysctl --system"* ]]
 }
 
 @test "01: user -> verified authorized_keys -> sudo -> sshd hardening -> sshd -t -> reload" {
@@ -596,4 +607,123 @@ service() {
   service node-exporter '$(id)'
   [ "$status" -eq 1 ]
   [[ $output != *docker* ]]
+}
+
+# --- container mode (tests/container): kernel-wide actions are skipped with a message ----------
+
+@test "container: 01 skips hostname and sysctl, says so" {
+  FAKE_CONTAINER=1 step 01-base
+  [ "$status" -eq 0 ]
+  [[ $stderr == *"skipped in container: hostname vps1"* && $stderr == *"skipped in container: sysctl"* ]]
+  [[ $stderr == *"skipped in container: chrony"* && $output != *"enable --now chrony"* ]]
+  [[ $output != *hostnamectl* && $output != *"sysctl -p"* ]]
+  [[ $output == *"systemctl reload ssh"* ]] # everything else still runs
+}
+
+@test "container: 10 installs Docker packages but does not start dockerd" {
+  node_env compose 51820 22 "postgresql" "5432" ""
+  printf 'COMPOSE_SERVICES="postgresql"\n' >>"$PKG/node/node.env"
+  FAKE_CONTAINER=1 step 10-docker
+  [ "$status" -eq 0 ]
+  [[ $output == *docker-ce* && $output != *"enable --now docker"* ]]
+  [[ $stderr == *"skipped in container: starting dockerd"* ]]
+}
+
+@test "container: 11 places CAs and config, verifies the installer, but does not run it" {
+  k3s_package
+  FAKE_CONTAINER=1 step 11-k3s
+  [ "$status" -eq 0 ]
+  [[ $output == *"server/tls/server-ca.key"* && $output == *"verify sha256"* ]]
+  [[ $output != *INSTALL_K3S_VERSION* ]]
+  [[ $stderr == *"skipped in container: running the k3s installer"* ]]
+}
+
+@test "container: node-exporter on compose skips docker compose up" {
+  node_exporter_package
+  printf 'COMPOSE_SERVICES="node-exporter"\n' >>"$PKG/node/node.env"
+  FAKE_CONTAINER=1 service node-exporter
+  [ "$status" -eq 0 ]
+  [[ $output != *"compose -f"* ]]
+  [[ $stderr == *"skipped in container: docker compose up"* ]]
+}
+
+# --- 90 verification ------------------------------------------------------------------
+
+verify() {
+  export HOMELAB_CA_BUNDLE=$PKG/common/root_ca.crt
+  step 90-verify
+}
+
+@test "90: a working compose machine passes (WG port, sshd port, UFW, CA, node_exporter)" {
+  node_env compose 51820 22 "node-exporter" "9100" ""
+  FAKE_HANDSHAKES="a:5" verify
+  [ "$status" -eq 0 ]
+  [[ $stderr == *"verify OK: wg0 listens on 51820/udp"* && $stderr == *"verify OK: sshd on port 22"* ]]
+  [[ $stderr == *"verify OK: UFW active"* && $stderr == *"verify OK: homelab root CA trusted"* ]]
+  [[ $stderr == *"verify OK: node_exporter on 10.100.10.101:9100"* ]]
+  [[ $stderr == *"verification of vps1 passed"* ]]
+  [[ $output != *"[dry-run]"* ]] # read-only
+}
+
+@test "90: reports every failure and exits 1" {
+  node_env compose 443 2222 "node-exporter" "9100" ""
+  sed -i 's/^ListenPort = .*/ListenPort = 443/' "$PKG/node/wg0.conf"
+  export HOMELAB_CA_BUNDLE=$T/os-release # not a CA bundle
+  FAKE_WG_LISTEN=51820 FAKE_UFW_INACTIVE=1 FAKE_NO_METRICS=1 step 90-verify
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"wg0 listens on 51820, expected 443"* && $stderr == *"sshd on port 22, expected 2222"* ]]
+  [[ $stderr == *"UFW is not active"* && $stderr == *"homelab root CA is not in"* ]]
+  [[ $stderr == *"node_exporter does not answer"* && $stderr == *"verification of vps1 failed"* ]]
+}
+
+@test "90: wg0 down is a failure; peers without handshake only a warning" {
+  FAKE_WG_DOWN=1 verify
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"WireGuard interface wg0 is not up"* ]]
+  FAKE_HANDSHAKES="a:never b:3" verify
+  [ "$status" -eq 0 ]
+  [[ $stderr == *"1 of 2 WireGuard peers without a handshake yet"* ]]
+}
+
+@test "90: k3s checks API, CA and pod -> compose service on every port (exact port match)" {
+  k3s_package
+  node_env k3s 51820 22 "node-exporter openbao" "53 5432" ""
+  printf 'COMPOSE_SERVICES="openbao"\n' >>"$PKG/node/node.env"
+  mkdir -p "$T/k3s/server/tls" && cp "$PKG/node/k3s-ca/vps1/server-ca.crt" "$T/k3s/server/tls/"
+  FAKE_POD_OK="5432" verify
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"verify OK: k3s API ready"* && $stderr == *"k3s uses the cluster CA from the wizard"* ]]
+  [[ $stderr == *"verify OK: pod -> 10.100.10.101:5432"* ]]
+  [[ $stderr == *"pod cannot reach 10.100.10.101:53"* ]] # ok:5432 must not count for 53
+  FAKE_POD_OK="53 5432" verify
+  [ "$status" -eq 0 ]
+}
+
+@test "90: k3s with a foreign CA or a dead API fails" {
+  k3s_package
+  mkdir -p "$T/k3s/server/tls" && echo other >"$T/k3s/server/tls/server-ca.crt"
+  verify
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"k3s server CA differs from the package"* ]]
+  FAKE_K3S_DOWN=1 verify
+  [[ $stderr == *"k3s API is not ready"* ]]
+}
+
+@test "90: in a container k3s and node_exporter checks are skipped with a message" {
+  k3s_package
+  FAKE_CONTAINER=1 verify
+  [ "$status" -eq 0 ]
+  [[ $stderr == *"skipped in container: k3s checks"* && $stderr == *"skipped in container: node_exporter check"* ]]
+}
+
+@test "90: CA bundle override must be an absolute path" {
+  HOMELAB_CA_BUNDLE='x/../y' step 90-verify
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"HOMELAB_CA_BUNDLE must be an absolute path"* ]]
+}
+
+@test "00: an already loaded wireguard module (sysfs, as in a container) is enough" {
+  mkdir -p "$T/sys/module/wireguard"
+  FAKE_NO_WG_MODULE=1 step 00-preflight
+  [ "$status" -eq 0 ]
 }

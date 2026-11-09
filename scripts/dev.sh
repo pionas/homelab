@@ -27,7 +27,7 @@ Commands (run in the given order, stop at the first failure):
   golden     run the wizard on tests/golden/*/answers.txt and compare with expected/
              (GOLDEN_UPDATE=1 replaces expected/ with the new result)
   validate   docker compose config, kubeconform -strict and yq on the golden scenarios' output
-  container  install steps in a Debian systemd container (not implemented yet)
+  container  install steps for real in a disposable Debian systemd container (tests/container)
   help       show this help
 EOF
 }
@@ -178,7 +178,11 @@ cmd_validate() {
   done
   return "$rc"
 }
-cmd_container() { log_warn "container: not implemented yet (issue #13)"; }
+# Install steps for real, inside a disposable container (never on this machine).
+cmd_container() {
+  need docker "${WIZARD_TOOLS[@]}"
+  tests/container/run.sh
+}
 
 main() {
   if (($# == 0)); then

@@ -248,7 +248,8 @@ verify_sha256() {
   [[ $got == "$2" ]] || die "checksum mismatch for $1: expected $2, got $got (download tampered or changed)"
 }
 
-# verify_gpg_fingerprint FILE FINGERPRINT — dies unless FILE is exactly the key with this fingerprint.
+# verify_gpg_fingerprint FILE FINGERPRINT — dies unless FILE holds exactly one primary key and it
+# has this fingerprint (its subkeys, e.g. for signing, belong to it and are fine).
 verify_gpg_fingerprint() {
   if ((DRY_RUN)); then
     printf '[dry-run] verify gpg fingerprint %s = %s\n' "$1" "$2"
@@ -256,10 +257,19 @@ verify_gpg_fingerprint() {
   fi
   local home fprs
   home=$(mktemp -d)
-  fprs=$(gpg --homedir "$home" --show-keys --with-colons "$1" 2>/dev/null | awk -F: '$1 == "fpr" {print $10}')
+  # The fpr record right after a pub record is the primary key's fingerprint.
+  fprs=$(gpg --homedir "$home" --show-keys --with-colons "$1" 2>/dev/null |
+    awk -F: '$1 == "pub" {primary = 1; next} $1 == "fpr" && primary {print $10; primary = 0}')
   rm -rf "$home"
-  [[ $fprs == "$2" ]] || die "unexpected key in $1: expected only $2, got: ${fprs:-none}"
+  [[ $fprs == "$2" ]] || die "unexpected key in $1: expected one primary key $2, got: ${fprs//$'\n'/ }"
 }
+
+# in_container — true inside a container (tests/container): the kernel is shared with the host,
+# so steps skip what would need it (sysctl, hostname, Docker/k3s daemons) instead of failing.
+in_container() { systemd-detect-virt --container --quiet 2>/dev/null; }
+
+# container_skip WHAT — logs that WHAT is skipped because this is a container.
+container_skip() { log_warn "skipped in container: $*"; }
 
 # check_flags — the shared settings a caller may pass in the environment must be plain values.
 check_flags() {

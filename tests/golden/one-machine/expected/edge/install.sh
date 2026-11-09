@@ -7,7 +7,7 @@ set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 # Steps read node.env and secrets.env from here.
 export HOMELAB_NODE_DIR=$PWD
-IDS=(00 01 02 03 04 10 12-node-agent 21-step-ca 30-postgresql 39-postgres-exporter 40-traefik)
+IDS=(00 01 02 03 04 10 12-node-agent 21-step-ca 30-postgresql 39-postgres-exporter 40-traefik 90)
 declare -A ALIASES=(["03-ssh"]=03)
 STEPS=(
   ../common/00-preflight.sh
@@ -21,6 +21,7 @@ STEPS=(
   services/postgresql/install.sh
   services/postgres-exporter/install.sh
   services/traefik/install.sh
+  ../common/90-verify.sh
 )
 only='' args=()
 while (($#)); do

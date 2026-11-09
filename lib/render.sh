@@ -18,6 +18,8 @@ RENDER_STEP_ALIASES='["03-ssh"]=03'
 RENDER_BASE_STEPS=(00-preflight 01-base 02-wireguard 03-ufw 04-ca-trust)
 RENDER_DOCKER_STEP=10-docker
 RENDER_K3S_STEP=11-k3s
+# Runs last, after the services.
+RENDER_VERIFY_STEP=90-verify
 # Machines whose services all have SCOPE=always sort last in INSTALL_ORDER.md.
 RENDER_NO_PRIORITY=99
 
@@ -115,10 +117,11 @@ EOF
   printf 'IDS=(%s' "${steps[0]%%-*}"
   for id in "${steps[@]:1}"; do printf ' %s' "${id%%-*}"; done
   for id in "$@"; do printf ' %s-%s' "$(catalog_get "$id" PRIORITY)" "$id"; done
+  printf ' %s' "${RENDER_VERIFY_STEP%%-*}"
   printf ')\ndeclare -A ALIASES=(%s)\nSTEPS=(\n' "$RENDER_STEP_ALIASES"
   for id in "${steps[@]}"; do printf '  ../common/%s.sh\n' "$id"; done
   for id in "$@"; do printf '  services/%s/install.sh\n' "$id"; done
-  printf ')\n'
+  printf '  ../common/%s.sh\n)\n' "$RENDER_VERIFY_STEP"
   cat <<'EOF'
 only='' args=()
 while (($#)); do

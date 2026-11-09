@@ -15,7 +15,9 @@ COMPOSE_DIR=/opt/homelab/$SERVICE_ID
 install_compose() {
   run install -d -m 700 "$COMPOSE_DIR"
   run install -m 600 "$SERVICE_DIR/docker-compose.yml" "$COMPOSE_DIR/docker-compose.yml"
-  run docker compose -f "$COMPOSE_DIR/docker-compose.yml" up -d
+  if in_container; then container_skip "docker compose up (no dockerd in the container)"; else
+    run docker compose -f "$COMPOSE_DIR/docker-compose.yml" up -d
+  fi
 }
 
 install_k3s() {

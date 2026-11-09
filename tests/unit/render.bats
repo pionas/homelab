@@ -80,7 +80,8 @@ listing() { tar -tzf "$OUT/$1.tar.gz"; }
   services/node-agent/install.sh
   services/postgresql/install.sh
   services/redis/install.sh
-  services/postgres-exporter/install.sh" ]
+  services/postgres-exporter/install.sh
+  ../common/90-verify.sh" ]
   run grep -c -e 10-docker -e 11-k3s "$OUT/vps3/install.sh"
   [ "$output" = 1 ] # k3s only: app-cluster runs in k3s, node-agent too
   grep -q 11-k3s "$OUT/vps3/install.sh"
@@ -118,7 +119,7 @@ listing() { tar -tzf "$OUT/$1.tar.gz"; }
   local pkg="$BATS_TEST_TMPDIR/pkg" f
   mkdir -p "$pkg" && tar -xzf "$OUT/vps2.tar.gz" -C "$pkg"
   # Stub steps that only print their name and arguments: nothing real runs here.
-  for f in 00-preflight 01-base 02-wireguard 03-ufw 04-ca-trust 10-docker; do
+  for f in 00-preflight 01-base 02-wireguard 03-ufw 04-ca-trust 10-docker 90-verify; do
     printf 'echo "%s $*"\n' "$f" >"$pkg/common/$f.sh"
   done
   for f in node-agent postgresql redis postgres-exporter; do
@@ -130,9 +131,12 @@ listing() { tar -tzf "$OUT/$1.tar.gz"; }
   run "$pkg/vps2/install.sh" --step 30-postgresql
   [ "$output" = "postgresql " ]
   run "$pkg/vps2/install.sh" --force
-  [ "${#lines[@]}" -eq 10 ]
+  [ "${#lines[@]}" -eq 11 ]
   [ "${lines[0]}" = "00-preflight --force" ]
   [ "${lines[9]}" = "postgres-exporter --force" ]
+  [ "${lines[10]}" = "90-verify --force" ]
+  run "$pkg/vps2/install.sh" --step 90
+  [ "$output" = "90-verify " ]
   run "$pkg/vps2/install.sh" --step 99
   [ "$status" -eq 2 ]
   [[ $output == *"unknown step: 99"* ]]
