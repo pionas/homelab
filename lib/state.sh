@@ -21,7 +21,7 @@ _STATE_NAME_RE='^[a-z0-9]+(-[a-z0-9]+)*$'
 # shellcheck disable=SC2034 # used by lib/render.sh and lib/validate.sh
 STATE_DOMAIN=homelab.internal
 # shellcheck disable=SC2034
-STATE_DNS_NAMES="argo:argocd grafana:argocd bao:openbao valkey:valkey redpanda:redpanda ca:step-ca"
+STATE_DNS_NAMES="argo:argocd grafana:argocd bao:openbao valkey:valkey redpanda:redpanda ca:step-ca s3:rustfs"
 # A WireGuard key: 32 bytes in base64.
 STATE_WG_KEY_RE='^[A-Za-z0-9+/]{43}=$'
 

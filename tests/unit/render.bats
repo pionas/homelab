@@ -273,3 +273,25 @@ listing() { tar -tzf "$OUT/$1.tar.gz"; }
   grep -qF 'REDIS_EXPORTER_WEB_LISTEN_ADDRESS: "10.100.10.102:9121"' "$out/vps2/services/redis-exporter/docker-compose.yml"
   grep -qx 'valkey IN A 10.100.10.102' "$out/vps1/services/coredns/db.homelab.internal"
 }
+
+@test "real catalog: rustfs keys only in rustfs.env; API and console on the WG address; s3. in the zone" {
+  local out="$BATS_TEST_TMPDIR/rustfs"
+  run "$REPO_ROOT/wizard.sh" --out "$out" --gitops-repo git@example.com:g.git \
+    --answers "$REPO_ROOT/tests/golden/real-catalog/answers.txt"
+  [ "$status" -eq 0 ]
+  local key
+  key=$(sed -n 's/^RUSTFS_ROOT_PASSWORD=//p' "$out/vps2/secrets.env")
+  run grep -rlF "$key" "$out/vps2/services"
+  [ "$output" = "$out/vps2/services/rustfs/rustfs.env" ]
+  [ "$(stat -c %a "$out/vps2/services/rustfs/rustfs.env")" = 600 ]
+  grep -qF '"10.100.10.102:9000:9000"' "$out/vps2/services/rustfs/docker-compose.yml"
+  grep -qF '"10.100.10.102:9001:9001"' "$out/vps2/services/rustfs/docker-compose.yml"
+  grep -qx 's3 IN A 10.100.10.102' "$out/vps1/services/coredns/db.homelab.internal"
+}
+
+@test "rustfs and step-ca on one machine collide on 9000 (caught by validation)" {
+  printf 'MACHINES=1\nDEVICES="laptop:linux"\nM1_NAME=edge M1_ENDPOINT=10.0.0.1 M1_SERVICES="step-ca rustfs"\n' >"$BATS_TEST_TMPDIR/a.txt"
+  run "$REPO_ROOT/wizard.sh" --out "$BATS_TEST_TMPDIR/collide" --gitops-repo git@example.com:g.git --answers "$BATS_TEST_TMPDIR/a.txt"
+  [ "$status" -ne 0 ]
+  [[ $output == *"edge: port 9000/tcp used by both step-ca and rustfs"* ]]
+}

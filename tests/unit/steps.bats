@@ -984,3 +984,25 @@ valkey_package() {
   [ "$status" -eq 0 ]
   [[ $output == *"install -D -m 600 $PKG/node/services/redis-exporter/redis-exporter.env"* ]]
 }
+
+# --- 32 rustfs (catalog service) ------------------------------------------------------
+
+@test "32: rustfs installs its env file (600) and data/logs dirs owned by the rustfs user before starting" {
+  service_package rustfs docker-compose.yml rustfs.env
+  node_env compose 51820 22 "rustfs" "9000 9001" ""
+  printf 'COMPOSE_SERVICES="rustfs"\n' >>"$PKG/node/node.env"
+  service rustfs
+  [ "$status" -eq 0 ]
+  [[ $output == *"install -D -m 600 $PKG/node/services/rustfs/rustfs.env /opt/homelab/rustfs/rustfs.env"* ]]
+  before 'install -d -m 700 -o 10001 -g 10001 /var/lib/homelab/data/rustfs /var/lib/homelab/data/rustfs/data /var/lib/homelab/data/rustfs/logs' \
+    'docker compose -f /opt/homelab/rustfs/docker-compose.yml up -d'
+}
+
+@test "32: rustfs runs only under Docker" {
+  service_package rustfs docker-compose.yml rustfs.env
+  node_env k3s 51820 22 "rustfs" "9000 9001" ""
+  printf 'COMPOSE_SERVICES=""\n' >>"$PKG/node/node.env"
+  service rustfs
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"rustfs runs only under Docker"* ]]
+}

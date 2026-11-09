@@ -43,6 +43,10 @@ vps2/services/redis-exporter/
 vps2/services/redis-exporter/docker-compose.yml
 vps2/services/redis-exporter/install.sh
 vps2/services/redis-exporter/redis-exporter.env
+vps2/services/rustfs/
+vps2/services/rustfs/docker-compose.yml
+vps2/services/rustfs/install.sh
+vps2/services/rustfs/rustfs.env
 vps2/services/valkey/
 vps2/services/valkey/docker-compose.yml
 vps2/services/valkey/install.sh
