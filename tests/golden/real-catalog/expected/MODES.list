@@ -127,6 +127,16 @@
 600 vps2/node.env
 600 vps2/secrets.env
 700 vps2/services
+700 vps2/services/mariadb
+600 vps2/services/mariadb/docker-compose.yml
+700 vps2/services/mariadb/initdb
+644 vps2/services/mariadb/initdb/10-homelab-viewer.sh
+755 vps2/services/mariadb/install.sh
+600 vps2/services/mariadb/mariadb.env
+700 vps2/services/mysqld-exporter
+600 vps2/services/mysqld-exporter/docker-compose.yml
+755 vps2/services/mysqld-exporter/install.sh
+600 vps2/services/mysqld-exporter/mysqld-exporter.env
 700 vps2/services/node-exporter
 600 vps2/services/node-exporter/docker-compose.yml
 755 vps2/services/node-exporter/install.sh

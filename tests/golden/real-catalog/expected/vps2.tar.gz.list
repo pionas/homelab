@@ -15,6 +15,16 @@ vps2/install.sh
 vps2/node.env
 vps2/secrets.env
 vps2/services/
+vps2/services/mariadb/
+vps2/services/mariadb/docker-compose.yml
+vps2/services/mariadb/initdb/
+vps2/services/mariadb/initdb/10-homelab-viewer.sh
+vps2/services/mariadb/install.sh
+vps2/services/mariadb/mariadb.env
+vps2/services/mysqld-exporter/
+vps2/services/mysqld-exporter/docker-compose.yml
+vps2/services/mysqld-exporter/install.sh
+vps2/services/mysqld-exporter/mysqld-exporter.env
 vps2/services/node-exporter/
 vps2/services/node-exporter/docker-compose.yml
 vps2/services/node-exporter/install.sh
