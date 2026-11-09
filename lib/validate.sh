@@ -67,6 +67,16 @@ validate_plan() {
       rc=1
     done < <(catalog_missing_requires $(printf '%s\n' "${all[@]}" | sort -u) || true)
   fi
+  # A machine named like a zone name (ns, ca, argo...) would give that name two addresses.
+  local entry
+  while IFS= read -r name; do
+    for entry in ns $STATE_DNS_NAMES; do
+      if [[ $name == "${entry%%:*}" ]]; then
+        log_error "plan: machine name $name is reserved for the $STATE_DOMAIN zone"
+        rc=1
+      fi
+    done
+  done < <(state_query '.machines[].name')
   local -a required=("${VALIDATE_ALWAYS_REQUIRED[@]}")
   ((i > 1)) && required+=("${VALIDATE_MULTI_MACHINE_REQUIRED[@]}")
   for id in "${required[@]}"; do
