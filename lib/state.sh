@@ -132,6 +132,20 @@ state_set_wg_key() {
   N=$1 K=$2 _state_try '((.machines[], .admin_devices[]) | select(.name == strenv(N)) | .wg_public_key) = strenv(K)'
 }
 
+# Public routes on the edge (Traefik): an application host name served by a machine (its k3s
+# ingress on the WireGuard address), optionally with a fallback machine for failover.
+STATE_ROUTE_PORT=80
+STATE_ROUTE_HEALTH_PATH=/healthz
+
+# state_add_route HOST MACHINE [FALLBACK] — appends a route; a host already routed is an error.
+state_add_route() {
+  local fallback_field=''
+  [[ -n ${3:-} ]] && fallback_field=', "fallback": strenv(F)'
+  H=$1 M=$2 F=${3:-} P=$STATE_ROUTE_PORT HP=$STATE_ROUTE_HEALTH_PATH _state_try '.routes = ((.routes // []) + [
+    {"host": strenv(H), "machine": strenv(M)'"$fallback_field"', "port": (strenv(P) | to_number),
+     "health_path": strenv(HP)}])'
+}
+
 _state_port_ok() { [[ $1 == '!!int' && $2 =~ ^[0-9]+$ ]] && ((10#$2 >= 1 && 10#$2 <= 65535)); }
 
 # _state_check WITH_CATALOG — logs every problem in _STATE; WITH_CATALOG=1 also checks service ids.
@@ -196,6 +210,8 @@ _state_check() {
     ips[$ip]=1
   done < <(_state_yq -r '.admin_devices[] | ["'"$_STATE_ROW"'", .name // "", .type // "", .wg_ip // ""] | join("'"$_STATE_FS"'")' 2>/dev/null)
 
+  _state_check_routes || rc=1
+
   # wg_public_key is optional (set by lib/wg.sh); when present it must be a key.
   local key
   while IFS=$_STATE_FS read -r mark name key; do
@@ -203,6 +219,48 @@ _state_check() {
     [[ $key =~ $STATE_WG_KEY_RE ]] || _state_err "'$name': wg_public_key is not a WireGuard key"
   done < <(_state_yq -r '(.machines[], .admin_devices[]) | select(has("wg_public_key")) |
     ["'"$_STATE_ROW"'", .name // "", .wg_public_key // ""] | join("'"$_STATE_FS"'")' 2>/dev/null)
+  return "$rc"
+}
+
+# _state_check_routes — routes[] is optional; every route must point at known, distinct machines.
+_state_check_routes() {
+  local rc=0 mark host machine fallback pt port path
+  local -A machines=() hosts=()
+  [[ $(_state_yq '(.routes // []) | tag') == '!!seq' ]] || {
+    log_error "state: routes must be a list"
+    return 1
+  }
+  while IFS= read -r machine; do [[ -n $machine ]] && machines[$machine]=1; done < <(_state_yq -r '.machines[].name' 2>/dev/null)
+  while IFS=$_STATE_FS read -r mark host machine fallback pt port path; do
+    [[ $mark == "$_STATE_ROW" ]] || continue
+    local at="route '$host'"
+    if ! [[ $host =~ ^[a-z0-9]+(-[a-z0-9]+)*(\.[a-z0-9]+(-[a-z0-9]+)*)+$ ]]; then
+      log_error "state: route host must be a lowercase domain name, got: '$host'"
+      rc=1
+    fi
+    [[ -z ${hosts[$host]-} ]] || {
+      log_error "state: duplicate route host: $host"
+      rc=1
+    }
+    hosts[$host]=1
+    [[ -n ${machines[$machine]-} ]] || {
+      log_error "state: $at: unknown machine '$machine'"
+      rc=1
+    }
+    if [[ -n $fallback ]] && { [[ -z ${machines[$fallback]-} ]] || [[ $fallback == "$machine" ]]; }; then
+      log_error "state: $at: fallback must be another known machine, got: '$fallback'"
+      rc=1
+    fi
+    _state_port_ok "$pt" "$port" || {
+      log_error "state: $at: port must be an integer 1-65535, got: '$port'"
+      rc=1
+    }
+    [[ $path =~ ^/[A-Za-z0-9._/-]*$ ]] || {
+      log_error "state: $at: health_path must be a URL path, got: '$path'"
+      rc=1
+    }
+  done < <(_state_yq -r '(.routes // [])[] | ["'"$_STATE_ROW"'", .host // "", .machine // "", .fallback // "",
+    (.port | tag), .port // "", .health_path // ""] | join("'"$_STATE_FS"'")' 2>/dev/null)
   return "$rc"
 }
 

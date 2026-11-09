@@ -87,6 +87,23 @@ _wizard_devices() {
   done
 }
 
+# _wizard_routes — public routes through the edge (Traefik), asked after the machines exist.
+_wizard_routes() {
+  local entry host machine fallback extra
+  ui_input ROUTES "Public routes through the edge as host:machine[:fallback_machine], space-separated (none = no routes)" none || return 1
+  [[ $UI_ANSWER == none ]] && return 0
+  for entry in $UI_ANSWER; do
+    IFS=: read -r host machine fallback extra <<<"$entry"
+    if [[ -z $host || -z $machine || -n $extra ]]; then
+      log_error "ROUTES: expected host:machine[:fallback_machine], got: $entry"
+      return 1
+    fi
+    # Re-running with the same answers keeps existing routes.
+    [[ -n $(H=$host state_query '(.routes // [])[] | select(.host == strenv(H)) | .host') ]] && continue
+    state_add_route "$host" "$machine" "$fallback" || return 1
+  done
+}
+
 # wizard_collect OUT_DIR GITOPS_REPO — loads OUT_DIR/state.yaml when present (existing machines and
 # their addresses stay as they are) and asks only about what is new.
 wizard_collect() {
@@ -117,6 +134,7 @@ wizard_collect() {
   for ((n = WIZARD_EXISTING + 1; n <= total; n++)); do
     _wizard_machine "$n" || return 1
   done
+  _wizard_routes || return 1
   local unused
   unused=$(ui_unused_answers)
   [[ -z $unused ]] || {

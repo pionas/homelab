@@ -77,6 +77,17 @@ validate_plan() {
       fi
     done
   done < <(state_query '.machines[].name')
+  # A route host inside the zone must not take the name of a machine or panel.
+  local host label
+  while IFS= read -r host; do
+    [[ $host == *".$STATE_DOMAIN" ]] || continue
+    label=${host%".$STATE_DOMAIN"}
+    if [[ -n $(N=$label state_query '.machines[] | select(.name == strenv(N)) | .name') ||
+    " ns ${STATE_DNS_NAMES//:/ } " == *" $label "* ]]; then
+      log_error "plan: route host $host clashes with a machine or panel name in $STATE_DOMAIN"
+      rc=1
+    fi
+  done < <(state_query '(.routes // [])[].host')
   local -a required=("${VALIDATE_ALWAYS_REQUIRED[@]}")
   ((i > 1)) && required+=("${VALIDATE_MULTI_MACHINE_REQUIRED[@]}")
   for id in "${required[@]}"; do

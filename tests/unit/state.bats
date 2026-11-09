@@ -193,3 +193,33 @@ expect_state_invalid() {
   [ "$status" -eq 0 ]
   [ "$output" = $'5\nfalse' ]
 }
+
+# --- routes -----------------------------------------------------------------
+
+@test "routes: added with defaults (port 80, /healthz), fallback only when given" {
+  run --separate-stderr in_state "state_load '$ST/reference.yaml'
+    state_add_route app.homelab.internal vps3 vps4; state_add_route b.example.org vps3
+    state_query '.routes[] | [.host, .machine, .fallback // \"-\", .port, .health_path] | join(\" \")'"
+  [ "$status" -eq 0 ]
+  [ "$output" = $'app.homelab.internal vps3 vps4 80 /healthz\nb.example.org vps3 - 80 /healthz' ]
+}
+
+@test "routes: rejects duplicate host, unknown or same fallback, bad host; state unchanged" {
+  run --separate-stderr in_state "state_load '$ST/reference.yaml'; state_add_route a.example.org vps3
+    state_add_route a.example.org vps1 && exit 9
+    state_add_route b.example.org vps1 vps1 && exit 9
+    state_add_route c.example.org nope && exit 9
+    state_add_route 'Bad Host' vps1 && exit 9
+    state_query '.routes | length'"
+  [ "$status" -eq 0 ]
+  [ "$output" = 1 ]
+  [[ $stderr == *"duplicate route host: a.example.org"* && $stderr == *"fallback must be another known machine"* ]]
+  [[ $stderr == *"unknown machine 'nope'"* && $stderr == *"route host must be a lowercase domain name"* ]]
+}
+
+@test "routes: port and health path from the file are validated" {
+  yq '.routes = [{"host": "a.example.org", "machine": "vps3", "port": 70000, "health_path": "x;y"}]' \
+    "$ST/reference.yaml" >"$BATS_TEST_TMPDIR/r.yaml"
+  expect_state_invalid "$BATS_TEST_TMPDIR/r.yaml" "route 'a.example.org': port must be an integer 1-65535"
+  [[ $output == *"health_path must be a URL path, got: 'x;y'"* ]]
+}
