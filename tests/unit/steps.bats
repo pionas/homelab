@@ -226,7 +226,7 @@ before() {
   before 'ufw allow 22/tcp' 'ufw --force enable'
   before 'ufw default deny incoming' 'ufw --force enable'
   [[ $output == *"[dry-run] ufw allow 51820/udp"* ]]
-  [[ $output == *"[dry-run] ufw allow from 10.100.10.0/24 to any port 5432 proto tcp"* ]]
+  [[ $output == *"[dry-run] ufw allow from 10.100.10.0/24 to any port 5432 comment homelab-service"* ]] # tcp + udp
   [[ $output == *"[dry-run] ufw allow from 10.100.10.0/24 to any port 22 proto tcp"* ]]
   [[ $output != *"ufw allow 5432"* ]] # never public
 }

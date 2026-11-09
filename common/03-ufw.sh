@@ -37,8 +37,9 @@ firewall() {
   for port in ${PUBLIC_PORTS:-}; do
     run ufw allow "$port/tcp" comment homelab-public
   done
+  # TCP and UDP: some services need UDP (DNS on 53), and the WireGuard network is trusted.
   for port in ${PORTS:-}; do
-    run ufw allow from "$HOMELAB_WG_NET" to any port "$port" proto tcp comment homelab-service
+    run ufw allow from "$HOMELAB_WG_NET" to any port "$port" comment homelab-service
   done
   if [[ $RUNTIME == k3s ]]; then
     run ufw allow from "$K3S_POD_NET" comment homelab-k3s-pods
