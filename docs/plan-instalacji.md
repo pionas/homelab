@@ -164,7 +164,7 @@ Kolejność maszyn wynika z najniższego priorytetu ich usług: maszyna z DNS/st
 ## 5. Domeny i certyfikaty
 
 ### Etap VirtualBox
-* Domena **`homelab.internal`**: hosty (`edge.homelab.internal`, `vps1.homelab.internal`…), panele (`argo.`, `grafana.`, `redpanda.`, `valkey.`, `bao.homelab.internal`), aplikacje testowe przez edge (np. `e-konkursy.homelab.internal`).
+* Domena **`homelab.internal`**: hosty (`edge.homelab.internal`, `vps1.homelab.internal`…), panele (`argo.`, `grafana.`, `redpanda.`, `s3.` (RustFS), `valkey.`, `bao.homelab.internal`), aplikacje testowe przez edge (np. `e-konkursy.homelab.internal`).
   * `.local` odrzucona — zarezerwowana dla mDNS (RFC 6762).
 * DNS wewnętrzny (CoreDNS) serwuje strefę `homelab.internal`.
 * CA: root + intermediate generowane przez kreator; **step-ca** podpisuje certyfikaty intermediate i udostępnia endpoint ACME. Traefik używa resolvera ACME z `caServer` wskazującym na step-ca — docelowo zmienia się tylko adres CA.
