@@ -42,13 +42,37 @@ package() {
   }
 }
 
+# container_diagnostics — state, exit code and console output, for when the container does not boot.
+container_diagnostics() {
+  docker inspect -f 'container: {{.State.Status}}, exit code {{.State.ExitCode}} {{.State.Error}}' "$NAME" >&2 || true
+  docker logs --tail 40 "$NAME" >&2 2>&1 || true
+}
+
 start_container() {
   docker rm -f "$NAME" >/dev/null 2>&1 || true
-  docker run -d --name "$NAME" --hostname edge "${RUNTIME_OPTS[@]}" "$IMAGE" >/dev/null
-  # degraded is fine (a unit irrelevant here may fail); only "starting" past the timeout is not.
-  local state
-  state=$(timeout "$BOOT_TIMEOUT" docker exec "$NAME" systemctl is-system-running --wait 2>/dev/null || true)
-  [[ $state == running || $state == degraded ]] || die "systemd in the container did not start (state: ${state:-none})"
+  # -t gives systemd a console, so its boot messages show up in `docker logs`.
+  docker run -d -t --name "$NAME" --hostname edge "${RUNTIME_OPTS[@]}" "$IMAGE" >/dev/null
+  # systemctl answers "offline" until systemd runs as PID 1, so first wait for its runtime directory
+  # (polling with a deadline), then let systemd itself wait for the end of the boot.
+  local deadline=$((SECONDS + BOOT_TIMEOUT)) state
+  until docker exec "$NAME" test -d /run/systemd/system 2>/dev/null; do
+    if [[ $(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null) != true ]] || ((SECONDS >= deadline)); then
+      container_diagnostics
+      die "systemd in the container did not start"
+    fi
+    sleep 1
+  done
+  state=$(timeout "$((deadline - SECONDS + 1))" docker exec "$NAME" systemctl is-system-running --wait 2>/dev/null || true)
+  # degraded is fine (a unit irrelevant here may fail); anything else is not.
+  if [[ $state != running && $state != degraded ]]; then
+    docker exec "$NAME" systemctl --failed --no-legend >&2 2>&1 || true
+    container_diagnostics
+    die "systemd in the container did not finish booting (state: ${state:-none})"
+  fi
+  if [[ $state == degraded ]]; then
+    log_warn "container booted degraded; failed units:"
+    docker exec "$NAME" systemctl --failed --no-legend >&2 2>&1 || true
+  fi
 }
 
 # install RUNTIME LOG [ARG...] — runs the package's install.sh in the container.
