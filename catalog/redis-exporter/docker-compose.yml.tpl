@@ -7,9 +7,9 @@ services:
     network_mode: host
     env_file: ./redis-exporter.env
     environment:
-      REDIS_ADDR: "redis://${WG_IP}:6379"
+      REDIS_ADDR: "redis://${WG_IP}:${VALKEY_PORT_6379}"
       REDIS_USER: "${VALKEY_VIEWER_USERNAME}"
-      REDIS_EXPORTER_WEB_LISTEN_ADDRESS: "${WG_IP}:9121"
+      REDIS_EXPORTER_WEB_LISTEN_ADDRESS: "${WG_IP}:${PORT_9121}"
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]

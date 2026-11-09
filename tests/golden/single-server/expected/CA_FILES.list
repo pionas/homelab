@@ -1,0 +1,8 @@
+admin-devices/laptop/root_ca.crt
+ca/intermediate_ca.crt
+ca/intermediate_ca.key
+ca/root_ca.crt
+ca/root_ca.key
+common/root_ca.crt
+edge/ca/intermediate_ca.crt
+edge/ca/intermediate_ca.key

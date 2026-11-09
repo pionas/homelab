@@ -1,0 +1,26 @@
+# RustFS (Apache-2.0, S3 API) instead of MinIO, whose repository is archived (decision "object
+# storage" in the install plan). S3 API on 9000, console on 9001, both only on the WireGuard
+# address. Keys come from rustfs.env (mode 600). Data stays on the host when the container is removed.
+services:
+  rustfs:
+    image: rustfs/rustfs:1.0.4
+    restart: unless-stopped
+    env_file: ./rustfs.env
+    environment:
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+      RUSTFS_OBS_LOG_DIRECTORY: /logs
+    ports:
+      - "10.100.10.100:9010:9000"
+      - "10.100.10.100:9011:9001"
+    volumes:
+      - "/var/lib/homelab/data/rustfs/data:/data"
+      - "/var/lib/homelab/data/rustfs/logs:/logs"
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

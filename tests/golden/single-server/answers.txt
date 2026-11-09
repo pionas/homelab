@@ -1,0 +1,7 @@
+# Everything on one server: step-ca and RustFS both default to 9000, so RustFS moves to 9010/9011.
+MACHINES=1
+DEVICES="laptop:linux"
+M1_NAME=edge M1_ENDPOINT=203.0.113.10 M1_WG_PORT=443
+M1_SERVICES="coredns step-ca postgresql mariadb valkey rustfs openbao"
+M1_PORTS="rustfs:9000=9010 rustfs:9001=9011"
+ROUTES="app.example.org:edge"

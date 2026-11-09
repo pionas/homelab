@@ -565,7 +565,7 @@ node_exporter_package() {
   mkdir -p "$d"
   cp "$REPO_ROOT/catalog/node-exporter/install.sh" "$d/"
   for f in docker-compose.yml node-exporter.yaml; do
-    WG_IP=10.100.10.101 envsubst '${WG_IP}' <"$REPO_ROOT/catalog/node-exporter/$f.tpl" >"$d/$f"
+    WG_IP=10.100.10.101 PORT_9100=9100 envsubst '${WG_IP} ${PORT_9100}' <"$REPO_ROOT/catalog/node-exporter/$f.tpl" >"$d/$f"
   done
 }
 
@@ -1005,4 +1005,26 @@ valkey_package() {
   service rustfs
   [ "$status" -eq 1 ]
   [[ $stderr == *"rustfs runs only under Docker"* ]]
+}
+
+# --- moved ports in node.env ---------------------------------------------------------
+
+@test "ports: step 90 checks node_exporter on its moved port" {
+  node_env compose 51820 22 "node-exporter" "9110" ""
+  printf 'PORT_OVERRIDES="node-exporter:9100=9110"\n' >>"$PKG/node/node.env"
+  fake curl '[[ $* == *":9110/metrics"* ]] && echo "node_exporter_build_info 1"'
+  FAKE_HANDSHAKES="a:5" verify
+  [ "$status" -eq 0 ]
+  [[ $stderr == *"verify OK: node_exporter on 10.100.10.101:9110"* ]]
+}
+
+@test "security: PORT_OVERRIDES must be service:port=port with valid ports" {
+  local bad
+  for bad in 'x:1=2;id' 'a:70000=1' 'a:1=$(id)'; do
+    node_env compose 51820 22 "" "" ""
+    printf 'PORT_OVERRIDES="%s"\n' "$bad" >>"$PKG/node/node.env"
+    step 03-ufw
+    [ "$status" -eq 1 ]
+    [[ $output != *ufw* ]]
+  done
 }

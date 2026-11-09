@@ -7,8 +7,8 @@ services:
     network_mode: host
     env_file: ./mysqld-exporter.env
     command:
-      - "--web.listen-address=${WG_IP}:9104"
-      - "--mysqld.address=${WG_IP}:3306"
+      - "--web.listen-address=${WG_IP}:${PORT_9104}"
+      - "--mysqld.address=${WG_IP}:${MARIADB_PORT_3306}"
       - "--mysqld.username=${MARIADB_VIEWER_USERNAME}"
     read_only: true
     cap_drop: [ALL]

@@ -27,14 +27,42 @@ _validate_machine() {
       rc=1
     fi
     # Service ports are TCP like SSH; WireGuard is UDP, so it never collides with them.
-    for port in $(catalog_get "$id" PORTS) $(catalog_get "$id" PUBLIC_PORTS); do
+    local default
+    for default in $(catalog_get "$id" PORTS) $(catalog_get "$id" PUBLIC_PORTS); do
+      port=$(state_port "$name" "$id" "$default")
       if [[ -n ${owner[$port]-} ]]; then
-        log_error "plan: $name: port $port/tcp used by both ${owner[$port]} and $id"
+        log_error "plan: $name: port $port/tcp used by both ${owner[$port]} and $id" \
+          "(move one: ${id}:${default}=<free port> in this machine's port overrides, M<n>_PORTS)"
         rc=1
       fi
       owner[$port]=$id
     done
   done
+  _validate_port_overrides "$name" "$@" || rc=1
+  return "$rc"
+}
+
+# _validate_port_overrides NAME SERVICE... — overrides only for the machine's services and their
+# ports, never for a FIXED_PORTS one.
+_validate_port_overrides() {
+  local name=$1 entry id default rc=0
+  shift
+  # shellcheck disable=SC2016 # $s is a yq variables
+  while IFS= read -r entry; do
+    [[ -n $entry ]] || continue
+    id=${entry%:*} default=${entry#*:}
+    if [[ " $* " != *" $id "* ]]; then
+      log_error "plan: $name: port override for $id, which is not on this machine"
+      rc=1
+    elif [[ " $(catalog_get "$id" PORTS) $(catalog_get "$id" PUBLIC_PORTS) " != *" $default "* ]]; then
+      log_error "plan: $name: port override $id:$default, but $id uses: $(catalog_get "$id" PORTS) $(catalog_get "$id" PUBLIC_PORTS)"
+      rc=1
+    elif [[ " $(catalog_get "$id" FIXED_PORTS) " == *" $default "* ]]; then
+      log_error "plan: $name: port $default of $id cannot be moved (clients expect it there)"
+      rc=1
+    fi
+  done < <(N=$name state_query '.machines[] | select(.name == strenv(N)) | (.port_overrides // {}) | to_entries[] |
+    .key as $s | (.value // {}) | keys[] | $s + ":" + .')
   return "$rc"
 }
 

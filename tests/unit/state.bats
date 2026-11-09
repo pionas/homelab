@@ -223,3 +223,24 @@ expect_state_invalid() {
   expect_state_invalid "$BATS_TEST_TMPDIR/r.yaml" "route 'a.example.org': port must be an integer 1-65535"
   [[ $output == *"health_path must be a URL path, got: 'x;y'"* ]]
 }
+
+# --- port overrides ------------------------------------------------------------
+
+@test "ports: state_port gives the override or the default; overrides are stored per machine and service" {
+  run --separate-stderr in_state "state_load '$ST/reference.yaml'
+    state_set_port_override vps2 db 5432 5433
+    state_port vps2 db 5432; state_port vps2 db 9999; state_port vps1 db 5432
+    state_query '.machines[2].port_overrides.db.\"5432\"'"
+  [ "$status" -eq 0 ]
+  [ "$output" = $'5433\n9999\n5432\n5433' ]
+}
+
+@test "ports: overrides must be numbers 1-65535" {
+  run --separate-stderr in_state "state_load '$ST/reference.yaml'
+    state_set_port_override vps2 db 5432 x && exit 9
+    state_set_port_override vps2 db 5432 70000 && exit 9
+    state_query '.machines[2] | has(\"port_overrides\")'"
+  [ "$status" -eq 0 ]
+  [ "$output" = false ]
+  [[ $stderr == *"ports must be numbers"* && $stderr == *"port override db:5432 must be an integer 1-65535, got: '70000'"* ]]
+}

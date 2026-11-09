@@ -1,0 +1,10 @@
+$ORIGIN homelab.internal.
+$TTL 300
+@ IN SOA ns.homelab.internal. hostmaster.homelab.internal. ( 1835533061 3600 600 86400 300 )
+@ IN NS ns.homelab.internal.
+ns IN A 10.100.10.100
+edge IN A 10.100.10.100
+bao IN A 10.100.10.100
+valkey IN A 10.100.10.100
+ca IN A 10.100.10.100
+s3 IN A 10.100.10.100

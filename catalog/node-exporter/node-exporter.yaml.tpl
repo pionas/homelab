@@ -30,7 +30,7 @@ spec:
           image: quay.io/prometheus/node-exporter:v1.12.1
           args:
             - "--path.rootfs=/host"
-            - "--web.listen-address=${WG_IP}:9100"
+            - "--web.listen-address=${WG_IP}:${PORT_9100}"
           securityContext:
             readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false

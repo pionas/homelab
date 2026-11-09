@@ -6,7 +6,8 @@
 # shellcheck source=common/lib.sh
 source "${BASH_SOURCE[0]%/*}/../common/lib.sh"
 
-_CATALOG_KEYS=(ID NAME SCOPE RUNTIMES PLACEMENT PRIORITY REQUIRES SECRETS USES_SECRETS PORTS PUBLIC_PORTS AUTO_ADD)
+# FIXED_PORTS: ports that cannot be moved on a machine (clients cannot use another one, e.g. DNS 53).
+_CATALOG_KEYS=(ID NAME SCOPE RUNTIMES PLACEMENT PRIORITY REQUIRES SECRETS USES_SECRETS PORTS PUBLIC_PORTS FIXED_PORTS AUTO_ADD)
 _CATALOG_REQUIRED=(ID NAME SCOPE RUNTIMES PRIORITY)
 # KEY=value or KEY="value"; no $, backticks or backslashes, so nothing can expand.
 # shellcheck disable=SC2016 # literal regex, nothing to expand
@@ -81,6 +82,10 @@ _catalog_validate() {
   if [[ $id == *-exporter && ${_CATALOG["$id,SCOPE"]} == auto && ${_CATALOG["$id,PRIORITY"]} != 39 ]]; then
     _catalog_err "auto exporters must have PRIORITY=39 (after data services, before edge)"
   fi
+  for word in ${_CATALOG["$id,FIXED_PORTS"]}; do
+    [[ " ${_CATALOG["$id,PORTS"]} ${_CATALOG["$id,PUBLIC_PORTS"]} " == *" $word "* ]] ||
+      _catalog_err "FIXED_PORTS: $word is not one of the service's PORTS or PUBLIC_PORTS"
+  done
   for k in PORTS PUBLIC_PORTS; do
     for word in ${_CATALOG["$id,$k"]}; do
       if ! [[ $word =~ ^[0-9]+$ ]] || ((word < 1 || word > 65535)); then

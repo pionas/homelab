@@ -280,3 +280,9 @@ on_fixture() {
     catalog_missing_requires argocd || echo missing"
   [ "${lines[*]}" = "postgresql postgres-exporter argocd openbao missing" ]
 }
+
+@test "FIXED_PORTS must be ports of the service" {
+  set_key db PORTS '"5432"'
+  echo 'FIXED_PORTS="5433"' >>"$CAT/db/service.conf"
+  expect_invalid "FIXED_PORTS: 5433 is not one of the service's PORTS or PUBLIC_PORTS"
+}
