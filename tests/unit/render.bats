@@ -309,7 +309,11 @@ listing() { tar -tzf "$OUT/$1.tar.gz"; }
   grep -qF -- '--web.listen-address=10.100.10.102:9188' "$s/postgres-exporter/docker-compose.yml"
   grep -qF -- '--mysqld.address=10.100.10.102:3307' "$s/mysqld-exporter/docker-compose.yml"
   grep -qF 'REDIS_ADDR: "redis://10.100.10.102:6380"' "$s/redis-exporter/docker-compose.yml"
-  grep -qx 'PORTS="3307 5433 6380 8081 9000 9001 9092 9100 9104 9121 9188 9644"' "$out/vps2/node.env"
+  # UFW opens the moved ports, not the defaults.
+  local ports p
+  ports=" $(sed -n 's/^PORTS="\(.*\)"$/\1/p' "$out/vps2/node.env") "
+  for p in 3307 5433 6380 9188; do [[ $ports == *" $p "* ]]; done
+  for p in 3306 5432 6379 9187; do [[ $ports != *" $p "* ]]; done
   grep -qF '"10.100.10.101:9443:9000"' "$out/vps1/services/step-ca/docker-compose.yml"
   grep -qF 'caServer: "https://10.100.10.101:9443/acme/acme/directory"' "$out/edge/services/traefik/traefik.yml"
 }
@@ -334,4 +338,18 @@ listing() { tar -tzf "$OUT/$1.tar.gz"; }
   [ "$output" = "$d/redpanda.env" ]
   run ! grep -rq '0\.0\.0\.0' "$d" --exclude=docker-compose.yml
   grep -qx 'redpanda IN A 10.100.10.102' "$out/vps1/services/coredns/db.homelab.internal"
+}
+
+@test "real catalog: typesense API key only in typesense.env; port on WG; runs as an unprivileged user" {
+  local out="$BATS_TEST_TMPDIR/ts"
+  run "$REPO_ROOT/wizard.sh" --out "$out" --gitops-repo git@example.com:g.git \
+    --answers "$REPO_ROOT/tests/golden/real-catalog/answers.txt"
+  [ "$status" -eq 0 ]
+  local d="$out/vps2/services/typesense" key
+  key=$(sed -n 's/^TYPESENSE_ROOT_PASSWORD=//p' "$out/vps2/secrets.env")
+  run grep -rlF "$key" "$d"
+  [ "$output" = "$d/typesense.env" ]
+  grep -qF '"10.100.10.102:8108:8108"' "$d/docker-compose.yml"
+  [ "$(yq '.services.typesense.user' "$d/docker-compose.yml")" = 10000:10000 ]
+  run ! grep -q -- '--api-key' "$d/docker-compose.yml"
 }
