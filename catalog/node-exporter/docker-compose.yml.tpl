@@ -13,4 +13,4 @@ services:
       - "/:/host:ro,rslave"
     command:
       - "--path.rootfs=/host"
-      - "--web.listen-address=${WG_IP}:9100"
+      - "--web.listen-address=${WG_IP}:${PORT_9100}"

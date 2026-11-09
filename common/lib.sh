@@ -166,7 +166,7 @@ HOMELAB_COMMON_DIR=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 # shellcheck disable=SC2034 # used by the install steps that source this file
 HOMELAB_WG_NET=10.100.10.0/24
 
-_NODE_ENV_KEYS='NODE_NAME|DOMAIN|WG_IP|WG_PORT|SSH_PORT|RUNTIME|OS|SERVICES|COMPOSE_SERVICES|PORTS|PUBLIC_PORTS'
+_NODE_ENV_KEYS='NODE_NAME|DOMAIN|WG_IP|WG_PORT|SSH_PORT|RUNTIME|OS|SERVICES|COMPOSE_SERVICES|PORTS|PUBLIC_PORTS|PORT_OVERRIDES'
 
 _valid_port() { [[ $1 =~ ^[1-9][0-9]{0,4}$ ]] && (($1 <= 65535)); }
 
@@ -195,6 +195,15 @@ load_node_env() {
   done
   for bad in ${COMPOSE_SERVICES:-}; do
     [[ " ${SERVICES:-} " == *" $bad "* ]] || _node_bad "COMPOSE_SERVICES has $bad, which is not in SERVICES"
+  done
+  local from to
+  for bad in ${PORT_OVERRIDES:-}; do
+    from='' to=''
+    # Copied first: _valid_port runs its own =~, which replaces BASH_REMATCH.
+    if [[ $bad =~ ^[a-z0-9]+(-[a-z0-9]+)*:([0-9]+)=([0-9]+)$ ]]; then from=${BASH_REMATCH[2]} to=${BASH_REMATCH[3]}; fi
+    if [[ -z $from ]] || ! _valid_port "$from" || ! _valid_port "$to"; then
+      _node_bad "PORT_OVERRIDES must be service:port=port entries, got: $bad"
+    fi
   done
   for p in PORTS PUBLIC_PORTS; do
     for bad in ${!p:-}; do
@@ -302,6 +311,18 @@ install_service_files() {
     [[ $f == *.env || $f == *.acl ]] && mode=600
     run install -D -m "$mode" "$src/$f" "$HOMELAB_COMPOSE_ROOT/$id/$f"
   done
+}
+
+# service_port ID DEFAULT — the host port ID really uses on this machine (PORT_OVERRIDES in node.env).
+service_port() {
+  local entry
+  for entry in ${PORT_OVERRIDES:-}; do
+    [[ ${entry%%=*} == "$1:$2" ]] && {
+      echo "${entry#*=}"
+      return 0
+    }
+  done
+  echo "$2"
 }
 
 # compose_up ID — (re)creates the service's containers, so changed config files are picked up.

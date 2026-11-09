@@ -55,9 +55,10 @@ _render_node_env() {
   N=$name state_query '.machines[] | select(.name == strenv(N)) | ["NODE_NAME=" + .name, "WG_IP=" + .wg_ip,
     "WG_PORT=" + (.wg_port | tostring), "SSH_PORT=" + (.ssh_port | tostring), "RUNTIME=" + .runtime,
     "OS=" + .os] | .[]' >>"$out_dir/$name/node.env"
+  local p
   for id in $services; do
-    ports+=" $(catalog_get "$id" PORTS)"
-    public+=" $(catalog_get "$id" PUBLIC_PORTS)"
+    for p in $(catalog_get "$id" PORTS); do ports+=" $(state_port "$name" "$id" "$p")"; done
+    for p in $(catalog_get "$id" PUBLIC_PORTS); do public+=" $(state_port "$name" "$id" "$p")"; done
     [[ $(_render_service_runtime "$id" "$runtime") == compose ]] && compose+=" $id"
   done
   # PORTS: reachable from the WireGuard network only; PUBLIC_PORTS: open to the internet (edge).
@@ -66,8 +67,13 @@ _render_node_env() {
   # shellcheck disable=SC2086
   public=$(printf '%s\n' $public | sort -nu | xargs)
   # COMPOSE_SERVICES: the ones run by Docker (step 10 is needed only when there is one).
-  printf 'SERVICES="%s"\nCOMPOSE_SERVICES="%s"\nPORTS="%s"\nPUBLIC_PORTS="%s"\n' \
-    "$services" "${compose# }" "$ports" "$public" >>"$out_dir/$name/node.env"
+  # PORT_OVERRIDES: id:default=port for every moved port, so the steps know where a service really is.
+  # shellcheck disable=SC2016 # $s is a yq variable
+  printf 'SERVICES="%s"\nCOMPOSE_SERVICES="%s"\nPORTS="%s"\nPUBLIC_PORTS="%s"\nPORT_OVERRIDES="%s"\n' \
+    "$services" "${compose# }" "$ports" "$public" \
+    "$(N=$name state_query '[.machines[] | select(.name == strenv(N)) | (.port_overrides // {}) | to_entries[] |
+      .key as $s | (.value // {}) | to_entries[] | $s + ":" + .key + "=" + (.value | tostring)] | join(" ")')" \
+    >>"$out_dir/$name/node.env"
 }
 
 # _render_templates OUT NAME ID — copies catalog/<id>/ into services/<id>/; *.tpl files are rendered
@@ -83,7 +89,7 @@ _render_templates() {
     vars+=("${line%\"}")
   done <"$out_dir/$name/node.env"
   for f in "${!_SECRETS[@]}"; do vars+=("$f=${_SECRETS[$f]}"); done
-  while IFS= read -r line; do vars+=("$line"); done < <(_render_computed_vars)
+  while IFS= read -r line; do vars+=("$line"); done < <(_render_computed_vars "$name" "$id")
   for f in "${vars[@]}"; do subst+=("\${${f%%=*}}"); done
   while IFS= read -r f; do
     rel=${f#"$src"/}
@@ -100,13 +106,26 @@ _render_templates() {
 
 # _render_dns_records — "name ip" for every machine and every placed panel name.
 # _render_computed_vars — template variables computed from the whole state (NAME=value lines):
+#   PORT_<p>          the port this service really uses on the host for its default port p
+#   <PREFIX>_PORT_<p> the same for every service on this machine (an exporter reaching its database)
 #   STEP_CA_IP        WireGuard address of the step-ca machine (Traefik's ACME server)
+#   STEP_CA_PORT      its port (default 9000, unless moved on that machine)
 #   ACME_EXTRA_HOSTS  route hosts -> the edge, as a YAML flow list for step-ca's extra_hosts, so the
 #                     HTTP-01 check reaches Traefik without depending on CoreDNS
 _render_computed_vars() {
-  local edge
+  local name=$1 id=$2 edge svc p ca_machine
   edge=$(state_query '.machines[0].wg_ip')
+  for p in $(catalog_get "$id" PORTS) $(catalog_get "$id" PUBLIC_PORTS); do
+    printf 'PORT_%s=%s\n' "$p" "$(state_port "$name" "$id" "$p")"
+  done
+  for svc in $(_render_services "$name"); do
+    for p in $(catalog_get "$svc" PORTS) $(catalog_get "$svc" PUBLIC_PORTS); do
+      printf '%s_PORT_%s=%s\n' "$(secrets_prefix "$svc")" "$p" "$(state_port "$name" "$svc" "$p")"
+    done
+  done
+  ca_machine=$(state_query '[.machines[] | select(.services[] == "step-ca") | .name][0] // ""')
   printf 'STEP_CA_IP=%s\n' "$(state_query '[.machines[] | select(.services[] == "step-ca") | .wg_ip][0] // ""')"
+  printf 'STEP_CA_PORT=%s\n' "$([[ -n $ca_machine ]] && state_port "$ca_machine" step-ca 9000)"
   printf 'ACME_EXTRA_HOSTS=[%s]\n' "$(E=$edge state_query '[(.routes // [])[] | "\"" + .host + ":" + strenv(E) + "\""] | join(", ")')"
 }
 

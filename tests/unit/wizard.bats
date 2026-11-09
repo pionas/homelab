@@ -217,8 +217,8 @@ field() { yq "$1" "$OUT/state.yaml"; }
 
 @test "without --answers and without a terminal the wizard falls back to read" {
   # DEFAULT_RUNTIME MACHINES DEVICES, then edge: NAME ENDPOINT WG_PORT SSH_PORT OS ARGOCD RUNTIME SERVICES,
-  # then ROUTES (empty line = default: none)
-  printf '%s\n' compose 1 laptop:linux edge 203.0.113.10 '' '' debian no compose step-ca '' >"$BATS_TEST_TMPDIR/in"
+  # then PORTS and ROUTES (empty lines = default: none)
+  printf '%s\n' compose 1 laptop:linux edge 203.0.113.10 '' '' debian no compose step-ca '' '' >"$BATS_TEST_TMPDIR/in"
   run bash -c '"$REPO_ROOT/wizard.sh" --catalog "'"$CAT"'" --out "'"$OUT"'" --gitops-repo x <"'"$BATS_TEST_TMPDIR"'/in"'
   [ "$status" -eq 0 ]
   [ "$(field '.machines[0] | [.name, .wg_port, .ssh_port, (.services | join(","))] | join(" ")')" = \
@@ -291,4 +291,46 @@ field() { yq "$1" "$OUT/state.yaml"; }
   [ "$status" -ne 0 ]
   [[ $output == *"route host vps1.homelab.internal clashes with a machine or panel name"* ]]
   [[ $output == *"route host argo.homelab.internal clashes"* ]]
+}
+
+# --- port overrides (one server) --------------------------------------------------
+
+@test "ports: everything on one server needs a moved port; M<n>_PORTS resolves it" {
+  local cat="$BATS_TEST_TMPDIR/cat" f="$BATS_TEST_TMPDIR/a.txt"
+  local base='MACHINES=1\nDEVICES="laptop:linux"\nM1_NAME=edge M1_ENDPOINT=10.0.0.1 M1_SERVICES="step-ca redis"\n'
+  cp -r "$CAT" "$cat"
+  sed -i 's/^PORTS=.*/PORTS="9000"/' "$cat/redis/service.conf"
+  printf '%b' "$base" >"$f"
+  run "$REPO_ROOT/wizard.sh" --catalog "$cat" --out "$OUT" --answers "$f" --gitops-repo "$REPO"
+  [ "$status" -ne 0 ]
+  [[ $output == *"edge: port 9000/tcp used by both step-ca and redis (move one: redis:9000=<free port>"* ]]
+  printf '%bM1_PORTS="redis:9000=9010"\n' "$base" >"$f"
+  run "$REPO_ROOT/wizard.sh" --catalog "$cat" --out "$OUT" --answers "$f" --gitops-repo "$REPO"
+  [ "$status" -eq 0 ]
+  [ "$(field '.machines[0].port_overrides.redis."9000"')" = 9010 ]
+}
+
+@test "ports: malformed entry, a service not on the machine, a port the service does not use are rejected" {
+  local f="$BATS_TEST_TMPDIR/a.txt"
+  ports_answer() { printf 'MACHINES=1\nDEVICES="laptop:linux"\nM1_NAME=edge M1_ENDPOINT=10.0.0.1 M1_SERVICES="step-ca"\nM1_PORTS="%s"\n' "$1" >"$f"; }
+  ports_answer 'step-ca9000=1'
+  run "$REPO_ROOT/wizard.sh" --catalog "$CAT" --out "$OUT" --answers "$f" --gitops-repo "$REPO"
+  [ "$status" -ne 0 ]
+  [[ $output == *"M1_PORTS: expected service:port=new_port, got: step-ca9000=1"* ]]
+  ports_answer 'redis:6379=6380'
+  run "$REPO_ROOT/wizard.sh" --catalog "$CAT" --out "$OUT" --answers "$f" --gitops-repo "$REPO"
+  [ "$status" -ne 0 ]
+  [[ $output == *"port override for redis, which is not on this machine"* ]]
+  ports_answer 'step-ca:1234=5000'
+  run "$REPO_ROOT/wizard.sh" --catalog "$CAT" --out "$OUT" --answers "$f" --gitops-repo "$REPO"
+  [ "$status" -ne 0 ]
+  [[ $output == *"port override step-ca:1234, but step-ca uses: 9000"* ]]
+}
+
+@test "ports: a FIXED_PORTS port (DNS 53 of the real coredns) cannot be moved" {
+  printf 'MACHINES=1\nDEVICES="laptop:linux"\nM1_NAME=edge M1_ENDPOINT=10.0.0.1 M1_SERVICES="step-ca coredns"\nM1_PORTS="coredns:53=5353"\n' \
+    >"$BATS_TEST_TMPDIR/a.txt"
+  run "$REPO_ROOT/wizard.sh" --out "$OUT" --answers "$BATS_TEST_TMPDIR/a.txt" --gitops-repo "$REPO"
+  [ "$status" -ne 0 ]
+  [[ $output == *"port 53 of coredns cannot be moved"* ]]
 }

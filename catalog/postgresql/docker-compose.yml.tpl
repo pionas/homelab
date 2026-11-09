@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     env_file: ./postgresql.env
     ports:
-      - "${WG_IP}:5432:5432"
+      - "${WG_IP}:${PORT_5432}:5432"
     volumes:
       - "/var/lib/homelab/data/postgresql:/var/lib/postgresql/data"
       - "./initdb:/docker-entrypoint-initdb.d:ro"

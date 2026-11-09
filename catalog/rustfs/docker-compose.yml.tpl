@@ -13,8 +13,8 @@ services:
       RUSTFS_CONSOLE_ADDRESS: ":9001"
       RUSTFS_OBS_LOG_DIRECTORY: /logs
     ports:
-      - "${WG_IP}:9000:9000"
-      - "${WG_IP}:9001:9001"
+      - "${WG_IP}:${PORT_9000}:9000"
+      - "${WG_IP}:${PORT_9001}:9001"
     volumes:
       - "/var/lib/homelab/data/rustfs/data:/data"
       - "/var/lib/homelab/data/rustfs/logs:/logs"

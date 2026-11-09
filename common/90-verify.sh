@@ -94,10 +94,12 @@ verify_node_exporter() {
     container_skip "node_exporter check (it does not run in a container)"
     return 0
   fi
-  if curl -fsS --max-time 5 "http://$WG_IP:9100/metrics" | grep -q '^node_exporter_build_info'; then
-    ok "node_exporter on $WG_IP:9100"
+  local port
+  port=$(service_port node-exporter 9100)
+  if curl -fsS --max-time 5 "http://$WG_IP:$port/metrics" | grep -q '^node_exporter_build_info'; then
+    ok "node_exporter on $WG_IP:$port"
   else
-    bad "node_exporter does not answer on $WG_IP:9100"
+    bad "node_exporter does not answer on $WG_IP:$port"
   fi
 }
 

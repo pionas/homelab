@@ -146,6 +146,26 @@ state_add_route() {
      "health_path": strenv(HP)}])'
 }
 
+# Host-side ports can be moved per machine and service (several services with the same default port
+# on one machine, e.g. everything on a single server): machines[].port_overrides.<id>.<default>: <port>.
+
+# state_port MACHINE ID DEFAULT_PORT — the port ID really uses on MACHINE.
+state_port() {
+  local p
+  p=$(N=$1 S=$2 P=$3 _state_yq -r '.machines[] | select(.name == strenv(N)) | .port_overrides[strenv(S)][strenv(P)] // ""')
+  printf '%s\n' "${p:-$3}"
+}
+
+# state_set_port_override MACHINE ID DEFAULT_PORT PORT
+state_set_port_override() {
+  [[ $3 =~ ^[0-9]+$ && $4 =~ ^[0-9]+$ ]] || {
+    log_error "port override for $2 on $1: ports must be numbers, got: $3=$4"
+    return 1
+  }
+  N=$1 S=$2 P=$3 V=$4 _state_try '(.machines[] | select(.name == strenv(N)) | .port_overrides[strenv(S)][strenv(P)]) =
+    (strenv(V) | to_number)'
+}
+
 _state_port_ok() { [[ $1 == '!!int' && $2 =~ ^[0-9]+$ ]] && ((10#$2 >= 1 && 10#$2 <= 65535)); }
 
 # _state_check WITH_CATALOG — logs every problem in _STATE; WITH_CATALOG=1 also checks service ids.
@@ -211,6 +231,7 @@ _state_check() {
   done < <(_state_yq -r '.admin_devices[] | ["'"$_STATE_ROW"'", .name // "", .type // "", .wg_ip // ""] | join("'"$_STATE_FS"'")' 2>/dev/null)
 
   _state_check_routes || rc=1
+  _state_check_port_overrides || rc=1
 
   # wg_public_key is optional (set by lib/wg.sh); when present it must be a key.
   local key
@@ -219,6 +240,26 @@ _state_check() {
     [[ $key =~ $STATE_WG_KEY_RE ]] || _state_err "'$name': wg_public_key is not a WireGuard key"
   done < <(_state_yq -r '(.machines[], .admin_devices[]) | select(has("wg_public_key")) |
     ["'"$_STATE_ROW"'", .name // "", .wg_public_key // ""] | join("'"$_STATE_FS"'")' 2>/dev/null)
+  return "$rc"
+}
+
+# _state_check_port_overrides — the shape of port_overrides; whether the service and port exist on
+# the machine is checked with the catalog (validate_plan).
+_state_check_port_overrides() {
+  local rc=0 mark name id default vt value
+  # shellcheck disable=SC2016 # $m and $s are yq variables
+  while IFS=$_STATE_FS read -r mark name id default vt value; do
+    [[ $mark == "$_STATE_ROW" ]] || continue
+    if ! [[ $id =~ ^[a-z0-9]+(-[a-z0-9]+)*$ && $default =~ ^[0-9]+$ ]]; then
+      log_error "state: machine '$name': port override key must be <service>.<port>, got: '$id.$default'"
+      rc=1
+    fi
+    _state_port_ok "$vt" "$value" || {
+      log_error "state: machine '$name': port override $id:$default must be an integer 1-65535, got: '$value'"
+      rc=1
+    }
+  done < <(_state_yq -r '.machines[] | .name as $m | (.port_overrides // {}) | to_entries[] | .key as $s |
+    (.value // {}) | to_entries[] | ["'"$_STATE_ROW"'", $m, $s, .key, (.value | tag), .value] | join("'"$_STATE_FS"'")' 2>/dev/null)
   return "$rc"
 }
 

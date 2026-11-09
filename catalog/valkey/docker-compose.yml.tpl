@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     command: ["valkey-server", "/etc/valkey/valkey.conf"]
     ports:
-      - "${WG_IP}:6379:6379"
+      - "${WG_IP}:${PORT_6379}:6379"
     volumes:
       - "./valkey.conf:/etc/valkey/valkey.conf:ro"
       - "./users.acl:/etc/valkey/users.acl:ro"

@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     env_file: ./mariadb.env
     ports:
-      - "${WG_IP}:3306:3306"
+      - "${WG_IP}:${PORT_3306}:3306"
     volumes:
       - "/var/lib/homelab/data/mariadb:/var/lib/mysql"
       - "./initdb:/docker-entrypoint-initdb.d:ro"

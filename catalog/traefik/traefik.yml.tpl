@@ -21,7 +21,7 @@ certificatesResolvers:
       email: "admin@${DOMAIN}"
       storage: /etc/traefik/acme/acme.json
       # VirtualBox stage: step-ca over WireGuard; production: the Let's Encrypt URL instead.
-      caServer: "https://${STEP_CA_IP}:9000/acme/acme/directory"
+      caServer: "https://${STEP_CA_IP}:${STEP_CA_PORT}/acme/acme/directory"
       httpChallenge:
         entryPoint: web
 

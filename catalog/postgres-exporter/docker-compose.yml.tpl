@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     network_mode: host
     env_file: ./postgres-exporter.env
-    command: ["--web.listen-address=${WG_IP}:9187"]
+    command: ["--web.listen-address=${WG_IP}:${PORT_9187}"]
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]

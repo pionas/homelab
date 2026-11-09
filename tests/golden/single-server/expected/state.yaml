@@ -1,0 +1,35 @@
+gitops_repo: git@example.com:pionas/homelab-gitops.git
+default_runtime: compose
+machines:
+  - name: edge
+    endpoint: 203.0.113.10
+    os: debian
+    runtime: compose
+    wg_ip: 10.100.10.100
+    wg_port: 443
+    ssh_port: 22
+    services:
+      - node-exporter
+      - coredns
+      - step-ca
+      - postgresql
+      - mariadb
+      - rustfs
+      - valkey
+      - traefik
+      - openbao
+    port_overrides:
+      rustfs:
+        "9000": 9010
+        "9001": 9011
+    wg_public_key: N2LfgAWLzaUBcUFEn/geFMELa17jTyRXkLnp85goT20=
+admin_devices:
+  - name: laptop
+    type: linux
+    wg_ip: 10.100.10.200
+    wg_public_key: MnA3TR/bj1pIEIkUDPwcEDU8vv1Yxev63ws/pljs8Ss=
+routes:
+  - host: app.example.org
+    machine: edge
+    port: 80
+    health_path: /healthz

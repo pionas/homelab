@@ -70,6 +70,28 @@ _wizard_machine() {
   ((${#chosen[@]})) || return 0
   # shellcheck disable=SC2046 # validated service ids, one per line
   state_set_services "$name" $(catalog_sort $(printf '%s\n' "${chosen[@]}" | sort -u))
+  _wizard_ports "$n" "$name"
+}
+
+# _wizard_ports N NAME — optional moved host ports, e.g. when everything runs on one server.
+_wizard_ports() {
+  local p="M$1_" name=$2 entry hint='' id port
+  local -a ids=()
+  mapfile -t ids < <(N=$name state_query '.machines[] | select(.name == strenv(N)) | .services[]')
+  if ((${#ids[@]})); then
+    for id in $(catalog_expand "${ids[@]}"); do
+      for port in $(catalog_get "$id" PORTS) $(catalog_get "$id" PUBLIC_PORTS); do hint+=" $id:$port"; done
+    done
+  fi
+  ui_input "${p}PORTS" "$name: move host ports as service:port=new_port, space-separated (none = defaults;${hint:- no ports})" none || return 1
+  [[ $UI_ANSWER == none ]] && return 0
+  for entry in $UI_ANSWER; do
+    if ! [[ $entry =~ ^([a-z0-9]+(-[a-z0-9]+)*):([0-9]+)=([0-9]+)$ ]]; then
+      log_error "${p}PORTS: expected service:port=new_port, got: $entry"
+      return 1
+    fi
+    state_set_port_override "$name" "${BASH_REMATCH[1]}" "${BASH_REMATCH[3]}" "${BASH_REMATCH[4]}" || return 1
+  done
 }
 
 _wizard_devices() {

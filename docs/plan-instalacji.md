@@ -25,6 +25,7 @@ Dokument uzupełnia „Dokumentację Architektury Rozproszonego Homelaba”. Opi
 | Adresacja WG | Edge `10.100.10.100`, kolejne maszyny `.101`–`.199` (inkrementacja); urządzenia administratora `.200`–`.254`. Kreator waliduje wyczerpanie zakresów. Adres DNS w konfiguracjach WG = adres WG maszyny z CoreDNS (wyliczany, nie stały). |
 | Kroki systemowe | Kroki 01–04, Docker (10) i k3s (11) są w `common/`, **nie w katalogu usług**. Docker i k3s dokłada logika środowiska maszyny. Katalog zaczyna się od node_exporter (12). |
 | Porty publiczne | Tylko usługi z `PLACEMENT=edge` mogą mieć `PUBLIC_PORTS` (bindowane publicznie, np. Traefik 80/443). Wszystkie inne porty (`PORTS`) — wyłącznie na adresie WG. |
+| Porty usług | Domyślne porty z katalogu można **przenieść per maszyna i usługa** (`machines[].port_overrides`, w kreatorze `M<n>_PORTS="usługa:port=nowy_port …"`) — przy jednym serwerze wszystkie usługi stoją razem (np. step-ca i RustFS domyślnie na 9000). Zmienia się port po stronie hosta (adres WG), w kontenerze zostaje domyślny; usługi korzystające z przeniesionej (eksportery, Traefik → step-ca) dostają nowy port automatycznie. Nie przenosi się portów z `FIXED_PORTS` (DNS 53, Traefik 80/443 — klienci oczekują ich tam). Konflikt portów kreator zgłasza z podpowiedzią. |
 | Port WireGuard | Per maszyna (`wg_port` w stanie). Port podany dla edge (domyślnie `51820`) jest domyślny dla kolejnych maszyn, każdą można zmienić — w homelabie dostępne są wszystkie porty, produkcyjny VPS może udostępniać tylko kilka albo jeden. `Endpoint` peera = jego adres osiągalności + jego `wg_port`. |
 | Port SSH | Per maszyna (`ssh_port` w stanie), domyślnie `22`, zmieniany w odpowiedziach kreatora. Używany w `sshd_config` (krok 01) i UFW (krok 03). |
 | Priorytety eksporterów | Wszystkie eksportery (`auto`) mają priorytet **39** — po warstwie danych (30–35), przed edge (40). `node-exporter` (`always`) to usługa hosta z priorytetem 12. |
@@ -45,6 +46,7 @@ Uruchamiany na Linuksie — lokalnie lub bezpośrednio na maszynie. Zbiera odpow
 3. **Iteracja po maszynach, zaczynając od edge.** Dla każdej:
    * nazwa (podpowiedź `edge`, `vps1`…), adres osiągalności (IP VirtualBox / publiczne — `Endpoint` WireGuarda), adres WG nadawany automatycznie,
    * port WireGuarda (podpowiedź: port edge, na edge `51820`) i port SSH (podpowiedź `22`) — oba do zmiany,
+   * po wyborze usług: opcjonalne przeniesienie portów (`usługa:port=nowy_port`, domyślnie bez zmian),
    * system (domyślnie Debian),
    * środowisko: k3s / docker-compose (jeśli maszyna ma uruchamiać aplikacje z ArgoCD → wymuszone k3s),
    * lista usług:
@@ -128,6 +130,7 @@ SECRETS="ROOT DEFAULT VIEWER"
 USES_SECRETS=""         # sekrety innych usług, np. "VALKEY:VIEWER"
 PORTS="5432"            # bindowane na adres WG
 PUBLIC_PORTS=""         # bindowane publicznie; dozwolone tylko przy PLACEMENT=edge
+FIXED_PORTS=""          # porty, których nie można przenieść na maszynie (np. DNS 53)
 AUTO_ADD="postgres-exporter"
 ```
 
