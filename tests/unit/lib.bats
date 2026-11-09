@@ -240,3 +240,25 @@ setup() {
   [ "$status" -eq 1 ]
   [[ $output == *"checksum mismatch"* ]]
 }
+
+@test "verify_gpg_fingerprint: one primary key with subkeys passes; another key or two keys fail" {
+  type -P gpg >/dev/null || skip "gpg not installed"
+  export GNUPGHOME="$BATS_TEST_TMPDIR/gnupg"
+  mkdir -m 700 "$GNUPGHOME"
+  local k a b
+  for k in a b; do
+    gpg --batch --passphrase '' --quick-gen-key "test-$k" ed25519 cert never 2>/dev/null
+  done
+  a=$(gpg --with-colons --list-keys test-a | awk -F: '$1 == "fpr" {print $10; exit}')
+  b=$(gpg --with-colons --list-keys test-b | awk -F: '$1 == "fpr" {print $10; exit}')
+  gpg --batch --passphrase '' --quick-add-key "$a" ed25519 sign never 2>/dev/null
+  gpg --armor --export "$a" >"$BATS_TEST_TMPDIR/a.asc"
+  gpg --armor --export "$a" "$b" >"$BATS_TEST_TMPDIR/ab.asc"
+  run in_lib "verify_gpg_fingerprint '$BATS_TEST_TMPDIR/a.asc' $a"
+  [ "$status" -eq 0 ]
+  run in_lib "verify_gpg_fingerprint '$BATS_TEST_TMPDIR/a.asc' $b"
+  [ "$status" -eq 1 ]
+  [[ $output == *"expected one primary key $b, got: $a"* ]]
+  run in_lib "verify_gpg_fingerprint '$BATS_TEST_TMPDIR/ab.asc' $a"
+  [ "$status" -eq 1 ]
+}
