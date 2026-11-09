@@ -948,3 +948,39 @@ mariadb_init() {
   [ "$status" -eq 1 ]
   [ ! -e "$T/mariadb.sql" ]
 }
+
+# --- 33 valkey, 39 redis-exporter (catalog services) -----------------------------------
+
+valkey_package() {
+  service_package valkey docker-compose.yml valkey.conf
+  printf 'user default off\nuser app on #abc ~* &* +@all -@admin\n' >"$PKG/node/services/valkey/users.acl"
+  node_env compose 51820 22 "valkey" "6379" ""
+  printf 'COMPOSE_SERVICES="valkey"\n' >>"$PKG/node/node.env"
+}
+
+@test "33: valkey installs config and ACL (600, owned by the valkey user), data dir, then starts" {
+  valkey_package
+  service valkey
+  [ "$status" -eq 0 ]
+  before 'install -D -m 600 .*/users.acl /opt/homelab/valkey/users.acl' 'chown 999:999 /opt/homelab/valkey/users.acl'
+  before 'chown 999:999 /opt/homelab/valkey/users.acl' 'docker compose -f /opt/homelab/valkey/docker-compose.yml up -d'
+  [[ $output == *"install -d -m 700 /var/lib/homelab/data/valkey"* ]]
+}
+
+@test "33: valkey refuses an ACL file where the default user is not off" {
+  valkey_package
+  printf 'user default on nopass ~* +@all\n' >"$PKG/node/services/valkey/users.acl"
+  service valkey
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"the default user is not off"* ]]
+  [[ $output != *"[dry-run]"* ]]
+}
+
+@test "39: redis-exporter installs its env file (600) and starts" {
+  service_package redis-exporter docker-compose.yml redis-exporter.env
+  node_env compose 51820 22 "valkey redis-exporter" "6379 9121" ""
+  printf 'COMPOSE_SERVICES="valkey redis-exporter"\n' >>"$PKG/node/node.env"
+  service redis-exporter
+  [ "$status" -eq 0 ]
+  [[ $output == *"install -D -m 600 $PKG/node/services/redis-exporter/redis-exporter.env"* ]]
+}

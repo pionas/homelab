@@ -151,6 +151,15 @@
 755 vps2/services/postgresql/initdb/10-homelab-accounts.sh
 755 vps2/services/postgresql/install.sh
 600 vps2/services/postgresql/postgresql.env
+700 vps2/services/redis-exporter
+600 vps2/services/redis-exporter/docker-compose.yml
+755 vps2/services/redis-exporter/install.sh
+600 vps2/services/redis-exporter/redis-exporter.env
+700 vps2/services/valkey
+600 vps2/services/valkey/docker-compose.yml
+755 vps2/services/valkey/install.sh
+600 vps2/services/valkey/users.acl
+600 vps2/services/valkey/valkey.conf
 600 vps2.tar.gz
 600 vps2/wg0.conf
 700 vps3

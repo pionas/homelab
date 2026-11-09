@@ -254,3 +254,22 @@ listing() { tar -tzf "$OUT/$1.tar.gz"; }
   [ "$(stat -c %a "$out/vps2/services/mariadb/initdb/10-homelab-viewer.sh")" = 644 ] # sourced, not executed
   [[ $(sed -n 's/^SERVICES=//p' "$out/vps2/node.env") == *mysqld-exporter* ]]
 }
+
+@test "real catalog: valkey ACL holds only SHA-256 hashes; default user off; viewer read-only" {
+  local out="$BATS_TEST_TMPDIR/valkey"
+  run "$REPO_ROOT/wizard.sh" --out "$out" --gitops-repo git@example.com:g.git \
+    --answers "$REPO_ROOT/tests/golden/real-catalog/answers.txt"
+  [ "$status" -eq 0 ]
+  local acl="$out/vps2/services/valkey/users.acl" app viewer
+  app=$(sed -n 's/^VALKEY_DEFAULT_PASSWORD=//p' "$out/vps2/secrets.env")
+  viewer=$(sed -n 's/^VALKEY_VIEWER_PASSWORD=//p' "$out/vps2/secrets.env")
+  run ! grep -rqF "$app" "$out/vps2/services/valkey"
+  run ! grep -qF "$viewer" "$acl"
+  grep -qx 'user default off' "$acl"
+  grep -qF "user app on #$(printf %s "$app" | sha256sum | cut -d' ' -f1) " "$acl"
+  grep -qF "user viewer on #$(printf %s "$viewer" | sha256sum | cut -d' ' -f1) ~* resetchannels -@all +@read -@dangerous +info" "$acl"
+  [ "$(stat -c %a "$acl")" = 600 ]
+  grep -qF '"10.100.10.102:6379:6379"' "$out/vps2/services/valkey/docker-compose.yml"
+  grep -qF 'REDIS_EXPORTER_WEB_LISTEN_ADDRESS: "10.100.10.102:9121"' "$out/vps2/services/redis-exporter/docker-compose.yml"
+  grep -qx 'valkey IN A 10.100.10.102' "$out/vps1/services/coredns/db.homelab.internal"
+}
