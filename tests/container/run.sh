@@ -52,23 +52,19 @@ start_container() {
   docker rm -f "$NAME" >/dev/null 2>&1 || true
   # -t gives systemd a console, so its boot messages show up in `docker logs`.
   docker run -d -t --name "$NAME" --hostname edge "${RUNTIME_OPTS[@]}" "$IMAGE" >/dev/null
-  # systemctl answers "offline" until systemd runs as PID 1, so first wait for its runtime directory
-  # (polling with a deadline), then let systemd itself wait for the end of the boot.
-  local deadline=$((SECONDS + BOOT_TIMEOUT)) state
-  until docker exec "$NAME" test -d /run/systemd/system 2>/dev/null; do
+  # Poll systemd's own state (with a deadline): until PID 1 and its socket are up systemctl cannot
+  # connect at all, then it reports initializing/starting, and running or degraded when done.
+  local deadline=$((SECONDS + BOOT_TIMEOUT)) state=''
+  while :; do
+    state=$(docker exec "$NAME" systemctl is-system-running 2>/dev/null || true)
+    [[ $state == running || $state == degraded ]] && break
     if [[ $(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null) != true ]] || ((SECONDS >= deadline)); then
+      docker exec "$NAME" systemctl --failed --no-legend >&2 2>&1 || true
       container_diagnostics
-      die "systemd in the container did not start"
+      die "systemd in the container did not finish booting within $BOOT_TIMEOUT s (state: ${state:-no answer})"
     fi
     sleep 1
   done
-  state=$(timeout "$((deadline - SECONDS + 1))" docker exec "$NAME" systemctl is-system-running --wait 2>/dev/null || true)
-  # degraded is fine (a unit irrelevant here may fail); anything else is not.
-  if [[ $state != running && $state != degraded ]]; then
-    docker exec "$NAME" systemctl --failed --no-legend >&2 2>&1 || true
-    container_diagnostics
-    die "systemd in the container did not finish booting (state: ${state:-none})"
-  fi
   if [[ $state == degraded ]]; then
     log_warn "container booted degraded; failed units:"
     docker exec "$NAME" systemctl --failed --no-legend >&2 2>&1 || true
