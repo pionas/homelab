@@ -239,3 +239,18 @@ listing() { tar -tzf "$OUT/$1.tar.gz"; }
   run ! grep -rq '0\.0\.0\.0' "$out/vps2/services/postgresql" "$out/vps2/services/postgres-exporter"
   [ "$(stat -c %a "$out/vps2/services/postgresql/install.sh")" = 755 ] # no group/other write
 }
+
+@test "real catalog: mariadb keeps passwords in mariadb.env only; exporter auto-added on the WG address" {
+  local out="$BATS_TEST_TMPDIR/maria"
+  run "$REPO_ROOT/wizard.sh" --out "$out" --gitops-repo git@example.com:g.git \
+    --answers "$REPO_ROOT/tests/golden/real-catalog/answers.txt"
+  [ "$status" -eq 0 ]
+  local pw
+  pw=$(sed -n 's/^MARIADB_ROOT_PASSWORD=//p' "$out/vps2/secrets.env")
+  run grep -rlF "$pw" "$out/vps2/services"
+  [ "$output" = "$out/vps2/services/mariadb/mariadb.env" ]
+  grep -qF '"10.100.10.102:3306:3306"' "$out/vps2/services/mariadb/docker-compose.yml"
+  grep -qF -- '--web.listen-address=10.100.10.102:9104' "$out/vps2/services/mysqld-exporter/docker-compose.yml"
+  [ "$(stat -c %a "$out/vps2/services/mariadb/initdb/10-homelab-viewer.sh")" = 644 ] # sourced, not executed
+  [[ $(sed -n 's/^SERVICES=//p' "$out/vps2/node.env") == *mysqld-exporter* ]]
+}

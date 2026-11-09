@@ -7,7 +7,7 @@ set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 # Steps read node.env and secrets.env from here.
 export HOMELAB_NODE_DIR=$PWD
-IDS=(00 01 02 03 04 10 12-node-exporter 30-postgresql 39-postgres-exporter 90)
+IDS=(00 01 02 03 04 10 12-node-exporter 30-postgresql 31-mariadb 39-mysqld-exporter 39-postgres-exporter 90)
 declare -A ALIASES=(["03-ssh"]=03)
 STEPS=(
   ../common/00-preflight.sh
@@ -18,6 +18,8 @@ STEPS=(
   ../common/10-docker.sh
   services/node-exporter/install.sh
   services/postgresql/install.sh
+  services/mariadb/install.sh
+  services/mysqld-exporter/install.sh
   services/postgres-exporter/install.sh
   ../common/90-verify.sh
 )

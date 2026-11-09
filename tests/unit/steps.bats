@@ -898,3 +898,53 @@ traefik_package() {
   grep -qxF "CREATE ROLE :\"app_user\" LOGIN PASSWORD :'app_pass';" "$T/psql.sql"
   grep -qxF 'GRANT pg_monitor, pg_read_all_data TO :"viewer_user";' "$T/psql.sql"
 }
+
+# --- 31 mariadb, 39 mysqld-exporter (catalog services) ---------------------------------
+
+@test "31: mariadb copies compose, the env file (600) and the init script, creates the data dir" {
+  service_package mariadb docker-compose.yml mariadb.env
+  mkdir -p "$PKG/node/services/mariadb/initdb" && echo x >"$PKG/node/services/mariadb/initdb/10-homelab-viewer.sh"
+  node_env compose 51820 22 "mariadb" "3306" ""
+  printf 'COMPOSE_SERVICES="mariadb"\n' >>"$PKG/node/node.env"
+  service mariadb
+  [ "$status" -eq 0 ]
+  [[ $output == *"install -D -m 600 $PKG/node/services/mariadb/mariadb.env /opt/homelab/mariadb/mariadb.env"* ]]
+  # 644: the entrypoint sources the init script (no exec bit), so it can use docker_process_sql.
+  [[ $output == *"install -D -m 644 $PKG/node/services/mariadb/initdb/10-homelab-viewer.sh"* ]]
+  before 'install -d -m 700 /var/lib/homelab/data/mariadb' 'docker compose -f /opt/homelab/mariadb/docker-compose.yml up -d'
+}
+
+@test "39: mysqld-exporter installs its env file (600) and starts" {
+  service_package mysqld-exporter docker-compose.yml mysqld-exporter.env
+  node_env compose 51820 22 "mariadb mysqld-exporter" "3306 9104" ""
+  printf 'COMPOSE_SERVICES="mariadb mysqld-exporter"\n' >>"$PKG/node/node.env"
+  service mysqld-exporter
+  [ "$status" -eq 0 ]
+  [[ $output == *"install -D -m 600 $PKG/node/services/mysqld-exporter/mysqld-exporter.env"* ]]
+}
+
+# mariadb_init — sources the init script as the entrypoint does, with docker_process_sql recording SQL.
+mariadb_init() {
+  run env MARIADB_VIEWER_USERNAME="$1" MARIADB_VIEWER_PASSWORD="$2" bash -c '
+    docker_process_sql() { cat >"'"$T"'/mariadb.sql"; }
+    source "$REPO_ROOT/catalog/mariadb/initdb/10-homelab-viewer.sh"'
+}
+
+@test "mariadb init script: creates the VIEWER with exporter grants" {
+  mariadb_init viewer s3cret-pass
+  [ "$status" -eq 0 ]
+  grep -qF "CREATE USER 'viewer'@'%' IDENTIFIED BY 's3cret-pass'" "$T/mariadb.sql"
+  grep -qF "GRANT SELECT, PROCESS, REPLICATION CLIENT, SLAVE MONITOR ON *.* TO 'viewer'@'%';" "$T/mariadb.sql"
+}
+
+@test "mariadb init script: a name or password that could change the SQL stops it" {
+  local bad
+  for bad in "x'; DROP DATABASE mysql; --" 'a b' 'p$x'; do
+    mariadb_init viewer "$bad"
+    [ "$status" -eq 1 ]
+    [[ $output == *"unexpected characters"* ]]
+  done
+  mariadb_init "viewer'@'%" pass
+  [ "$status" -eq 1 ]
+  [ ! -e "$T/mariadb.sql" ]
+}
