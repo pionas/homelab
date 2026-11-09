@@ -77,7 +77,7 @@ install_run() {
   shift 2
   docker exec -e SSH_CONNECTION="$ADMIN_SSH_CONNECTION" "$NAME" /root/pkg/edge/install.sh "$@" >"$log" 2>&1 || {
     cat "$log" >&2
-    die "install.sh $* failed in the container"
+    die "install.sh ${*:-(no arguments)} failed in the container"
   }
 }
 

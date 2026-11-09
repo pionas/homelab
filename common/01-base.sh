@@ -35,7 +35,9 @@ apt_noninteractive() { run env DEBIAN_FRONTEND=noninteractive apt-get "$@"; }
 base_packages() {
   apt_noninteractive update
   apt_noninteractive -y upgrade
-  apt_noninteractive install -y chrony fail2ban unattended-upgrades wireguard wireguard-tools ufw \
+  # wireguard-tools only: the module is in the kernel (5.6+), while the `wireguard` metapackage can
+  # pull in another kernel image.
+  apt_noninteractive install -y chrony fail2ban unattended-upgrades wireguard-tools ufw \
     ca-certificates curl sudo openssl
 }
 
@@ -44,7 +46,11 @@ base_system() {
     run hostnamectl set-hostname "$NODE_NAME"
   fi
   run timedatectl set-timezone "$TIMEZONE"
-  run systemctl enable --now chrony
+  if in_container; then
+    container_skip "chrony (a container cannot set the host clock)"
+  else
+    run systemctl enable --now chrony
+  fi
   write_file /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
 APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
