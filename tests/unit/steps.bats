@@ -28,7 +28,7 @@ setup() {
 
 # node_env RUNTIME WG_PORT SSH_PORT SERVICES PORTS PUBLIC_PORTS
 node_env() {
-  printf 'NODE_NAME=vps1\nWG_IP=10.100.10.101\nWG_PORT=%s\nSSH_PORT=%s\nRUNTIME=%s\nOS=debian\nSERVICES="%s"\nPORTS="%s"\nPUBLIC_PORTS="%s"\n' \
+  printf 'NODE_NAME=vps1\nDOMAIN=homelab.internal\nWG_IP=10.100.10.101\nWG_PORT=%s\nSSH_PORT=%s\nRUNTIME=%s\nOS=debian\nSERVICES="%s"\nPORTS="%s"\nPUBLIC_PORTS="%s"\n' \
     "$2" "$3" "$1" "$4" "$5" "$6" >"$PKG/node/node.env"
   sed -i "s/^ListenPort = .*/ListenPort = $2/" "$PKG/node/wg0.conf" 2>/dev/null || true
 }
@@ -228,7 +228,7 @@ before() {
   before 'ufw allow 22/tcp' 'ufw --force enable'
   before 'ufw default deny incoming' 'ufw --force enable'
   [[ $output == *"[dry-run] ufw allow 51820/udp"* ]]
-  [[ $output == *"[dry-run] ufw allow from 10.100.10.0/24 to any port 5432 proto tcp"* ]]
+  [[ $output == *"[dry-run] ufw allow from 10.100.10.0/24 to any port 5432 comment homelab-service"* ]] # tcp + udp
   [[ $output == *"[dry-run] ufw allow from 10.100.10.0/24 to any port 22 proto tcp"* ]]
   [[ $output != *"ufw allow 5432"* ]] # never public
 }
@@ -644,7 +644,7 @@ service() {
   FAKE_CONTAINER=1 service node-exporter
   [ "$status" -eq 0 ]
   [[ $output != *"compose -f"* ]]
-  [[ $stderr == *"skipped in container: docker compose up"* ]]
+  [[ $stderr == *"skipped in container: docker compose up for node-exporter"* ]]
 }
 
 # --- 90 verification ------------------------------------------------------------------
@@ -726,4 +726,99 @@ verify() {
   mkdir -p "$T/sys/module/wireguard"
   FAKE_NO_WG_MODULE=1 step 00-preflight
   [ "$status" -eq 0 ]
+}
+
+# --- 20 coredns, 21 step-ca (catalog services) ----------------------------------------
+
+# service_package ID FILE... — services/ID/ with the catalog installer and rendered FILEs.
+service_package() {
+  local id=$1 f
+  shift
+  mkdir -p "$PKG/node/services/$id"
+  cp "$REPO_ROOT/catalog/$id/install.sh" "$PKG/node/services/$id/"
+  for f in "$@"; do echo "rendered $f" >"$PKG/node/services/$id/$f"; done
+}
+
+@test "20: coredns installs its files and starts under Docker; refuses to run outside compose" {
+  service_package coredns docker-compose.yml Corefile db.homelab.internal
+  node_env compose 51820 22 "coredns" "53" ""
+  printf 'COMPOSE_SERVICES="coredns"\n' >>"$PKG/node/node.env"
+  service coredns
+  [ "$status" -eq 0 ]
+  [[ $output == *"install -m 644 $PKG/node/services/coredns/db.homelab.internal /opt/homelab/coredns/db.homelab.internal"* ]]
+  before 'opt/homelab/coredns/Corefile' 'docker compose -f /opt/homelab/coredns/docker-compose.yml up -d --force-recreate'
+  sed -i 's/^COMPOSE_SERVICES=.*/COMPOSE_SERVICES=""/' "$PKG/node/node.env"
+  node_env k3s 51820 22 "coredns" "53" ""
+  printf 'COMPOSE_SERVICES=""\n' >>"$PKG/node/node.env"
+  service coredns
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"coredns runs only under Docker"* ]]
+}
+
+@test "20: coredns needs the generated zone in the package" {
+  service_package coredns docker-compose.yml Corefile
+  node_env compose 51820 22 "coredns" "53" ""
+  printf 'COMPOSE_SERVICES="coredns"\n' >>"$PKG/node/node.env"
+  service coredns
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"missing $PKG/node/services/coredns/db.homelab.internal"* ]]
+}
+
+# step_ca_package — what the wizard gives the step-ca machine: intermediate CA and the secret.
+step_ca_package() {
+  service_package step-ca docker-compose.yml ca.json
+  mkdir -p "$PKG/node/ca"
+  echo crt >"$PKG/node/ca/intermediate_ca.crt"
+  echo key >"$PKG/node/ca/intermediate_ca.key"
+  printf 'STEP_CA_DEFAULT_USERNAME=app\nSTEP_CA_DEFAULT_PASSWORD=s3cret-pass\nOTHER_ROOT_PASSWORD=x\n' >"$PKG/node/secrets.env"
+  chmod 600 "$PKG/node/secrets.env"
+  node_env compose 51820 22 "step-ca" "9000" ""
+  printf 'COMPOSE_SERVICES="step-ca"\n' >>"$PKG/node/node.env"
+}
+
+@test "21: step-ca gets the intermediate (key 600, owned by the step user) and the JWK password hidden" {
+  step_ca_package
+  service step-ca
+  [ "$status" -eq 0 ]
+  [[ $output == *"install -m 600 -o 1000 -g 1000 $PKG/node/ca/intermediate_ca.key /opt/homelab/step-ca/step/secrets/intermediate_ca.key"* ]]
+  [[ $output == *"$PKG/common/root_ca.crt /opt/homelab/step-ca/step/certs/root_ca.crt"* ]]
+  [[ $output == *"write /opt/homelab/step-ca/step/secrets/provisioner_password (mode 600)"*"(content hidden)"* ]]
+  [[ $output != *s3cret-pass* ]]
+  before 'config/ca.json' 'ca provisioner add app --type JWK --create'
+  before 'ca provisioner add' 'up -d --force-recreate'
+}
+
+@test "21: step-ca without the intermediate CA (another machine's package) stops" {
+  step_ca_package
+  rm "$PKG/node/ca/intermediate_ca.key"
+  service step-ca
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"only the step-ca machine's package has the intermediate CA"* ]]
+  [[ $output != *"[dry-run]"* ]]
+}
+
+@test "21: step-ca rejects a secrets.env with commands or a bad provisioner name" {
+  step_ca_package
+  printf 'STEP_CA_DEFAULT_USERNAME=app\nSTEP_CA_DEFAULT_PASSWORD=$(touch %s/PWNED)\n' "$T" >"$PKG/node/secrets.env"
+  service step-ca
+  [ "$status" -eq 1 ]
+  [ ! -e "$T/PWNED" ]
+  printf 'STEP_CA_DEFAULT_USERNAME="a b"\nSTEP_CA_DEFAULT_PASSWORD=x\n' >"$PKG/node/secrets.env"
+  service step-ca
+  [ "$status" -eq 1 ]
+}
+
+@test "21: in a container step-ca is configured but not started" {
+  step_ca_package
+  FAKE_CONTAINER=1 service step-ca
+  [ "$status" -eq 0 ]
+  [[ $output == *"intermediate_ca.key"* && $output != *"provisioner add"* ]]
+  [[ $stderr == *"skipped in container: adding the JWK provisioner and starting step-ca"* ]]
+}
+
+@test "security: node.env DOMAIN must be a domain name" {
+  sed -i 's/^DOMAIN=.*/DOMAIN="x;id"/' "$PKG/node/node.env"
+  step 03-ufw
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"DOMAIN must be a domain name"* ]]
 }

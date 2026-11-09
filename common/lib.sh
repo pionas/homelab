@@ -166,7 +166,7 @@ HOMELAB_COMMON_DIR=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 # shellcheck disable=SC2034 # used by the install steps that source this file
 HOMELAB_WG_NET=10.100.10.0/24
 
-_NODE_ENV_KEYS='NODE_NAME|WG_IP|WG_PORT|SSH_PORT|RUNTIME|OS|SERVICES|COMPOSE_SERVICES|PORTS|PUBLIC_PORTS'
+_NODE_ENV_KEYS='NODE_NAME|DOMAIN|WG_IP|WG_PORT|SSH_PORT|RUNTIME|OS|SERVICES|COMPOSE_SERVICES|PORTS|PUBLIC_PORTS'
 
 _valid_port() { [[ $1 =~ ^[1-9][0-9]{0,4}$ ]] && (($1 <= 65535)); }
 
@@ -187,6 +187,7 @@ load_node_env() {
   for p in WG_PORT SSH_PORT; do
     _valid_port "${!p}" || _node_bad "$p must be a port 1-65535, got: ${!p}"
   done
+  [[ ${DOMAIN:-} =~ ^[a-z0-9]+(-[a-z0-9]+)*(\.[a-z0-9]+(-[a-z0-9]+)*)+$ ]] || _node_bad "DOMAIN must be a domain name, got: ${DOMAIN:-}"
   [[ $RUNTIME =~ ^(compose|k3s)$ ]] || _node_bad "RUNTIME must be compose or k3s, got: $RUNTIME"
   [[ $OS =~ ^(debian|ubuntu)$ ]] || _node_bad "OS must be debian or ubuntu, got: $OS"
   for p in SERVICES COMPOSE_SERVICES; do
@@ -270,6 +271,29 @@ in_container() { systemd-detect-virt --container --quiet 2>/dev/null; }
 
 # container_skip WHAT — logs that WHAT is skipped because this is a container.
 container_skip() { log_warn "skipped in container: $*"; }
+
+# Compose services live in $HOMELAB_COMPOSE_ROOT/<id>/ (docker-compose.yml and their files).
+HOMELAB_COMPOSE_ROOT=/opt/homelab
+
+# service_runtime ID — compose when the wizard put ID under Docker, k3s on a k3s machine; dies otherwise.
+service_runtime() {
+  if [[ " ${COMPOSE_SERVICES:-} " == *" $1 "* ]]; then
+    echo compose
+  elif [[ $RUNTIME == k3s ]]; then
+    echo k3s
+  else
+    die "$1 is neither in COMPOSE_SERVICES nor on a k3s machine: regenerate the package"
+  fi
+}
+
+# compose_up ID — (re)creates the service's containers, so changed config files are picked up.
+compose_up() {
+  if in_container; then
+    container_skip "docker compose up for $1 (no dockerd in the container)"
+  else
+    run docker compose -f "$HOMELAB_COMPOSE_ROOT/$1/docker-compose.yml" up -d --force-recreate
+  fi
+}
 
 # check_flags — the shared settings a caller may pass in the environment must be plain values.
 check_flags() {

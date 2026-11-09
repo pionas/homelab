@@ -247,3 +247,14 @@ field() { yq "$1" "$OUT/state.yaml"; }
   [ "$status" -ne 0 ]
   [[ $output == *"--gitops-repo differs"* ]]
 }
+
+@test "validate_plan: machine names reserved for the DNS zone are rejected" {
+  run bash -c 'set -Eeuo pipefail; source "$REPO_ROOT/lib/validate.sh"; catalog_load "'"$CAT"'"
+    state_init repo compose
+    state_add_machine edge 10.0.0.1 debian compose; state_set_services edge node-agent traefik step-ca coredns
+    state_add_machine ca 10.0.0.2 debian compose; state_add_machine ns 10.0.0.3 debian compose
+    validate_plan'
+  [ "$status" -eq 1 ]
+  [[ $output == *"machine name ca is reserved for the homelab.internal zone"* ]]
+  [[ $output == *"machine name ns is reserved"* ]]
+}

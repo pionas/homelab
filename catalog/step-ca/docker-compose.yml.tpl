@@ -1,0 +1,15 @@
+# step-ca: signs certificates with the wizard's intermediate CA; ACME for Traefik and services.
+# Published only on the WireGuard address.
+services:
+  step-ca:
+    image: smallstep/step-ca:0.30.2
+    restart: unless-stopped
+    # The intermediate key has no password (see lib/ca.sh), so no --password-file.
+    command: ["/usr/local/bin/step-ca", "/home/step/config/ca.json"]
+    ports:
+      - "${WG_IP}:9000:9000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - "./step:/home/step"

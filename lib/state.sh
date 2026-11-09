@@ -17,6 +17,11 @@ _STATE_FS=$'\x1f'
 _STATE_ROW=row
 # Names become directory and key file names, so they must be safe path components.
 _STATE_NAME_RE='^[a-z0-9]+(-[a-z0-9]+)*$'
+# Internal DNS zone (CoreDNS): every machine name, plus these names -> the machine of the service.
+# shellcheck disable=SC2034 # used by lib/render.sh and lib/validate.sh
+STATE_DOMAIN=homelab.internal
+# shellcheck disable=SC2034
+STATE_DNS_NAMES="argo:argocd grafana:argocd bao:openbao redis:redis redpanda:redpanda ca:step-ca"
 # A WireGuard key: 32 bytes in base64.
 STATE_WG_KEY_RE='^[A-Za-z0-9+/]{43}=$'
 
