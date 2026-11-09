@@ -92,7 +92,8 @@ _render_templates() {
     if [[ $rel == *.tpl ]]; then
       env "${vars[@]}" envsubst "${subst[*]}" <"$f" >"$dst/${rel%.tpl}" || return 1
     else
-      cp -p "$f" "$dst/$rel"
+      # Keep the exec bit, never group/other write: these files run as root on the machine.
+      cp -p "$f" "$dst/$rel" && chmod go-w "$dst/$rel"
     fi
   done < <(find "$src" -type f | sort)
 }

@@ -20,5 +20,13 @@ vps2/services/node-exporter/docker-compose.yml
 vps2/services/node-exporter/install.sh
 vps2/services/node-exporter/node-exporter.yaml
 vps2/services/postgres-exporter/
+vps2/services/postgres-exporter/docker-compose.yml
+vps2/services/postgres-exporter/install.sh
+vps2/services/postgres-exporter/postgres-exporter.env
 vps2/services/postgresql/
+vps2/services/postgresql/docker-compose.yml
+vps2/services/postgresql/initdb/
+vps2/services/postgresql/initdb/10-homelab-accounts.sh
+vps2/services/postgresql/install.sh
+vps2/services/postgresql/postgresql.env
 vps2/wg0.conf

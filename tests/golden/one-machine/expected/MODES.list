@@ -31,7 +31,7 @@
 700 edge/services/postgres-exporter
 700 edge/services/postgresql
 600 edge/services/postgresql/docker-compose.yml
-775 edge/services/postgresql/install.sh
+755 edge/services/postgresql/install.sh
 700 edge/services/step-ca
 700 edge/services/traefik
 700 edge/services/traefik/dynamic

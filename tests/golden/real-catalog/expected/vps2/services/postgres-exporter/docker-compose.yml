@@ -1,0 +1,12 @@
+# postgres_exporter: logs in with the read-only VIEWER account; host network, listening on the
+# WireGuard address only. Credentials come from postgres-exporter.env (mode 600).
+services:
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+    restart: unless-stopped
+    network_mode: host
+    env_file: ./postgres-exporter.env
+    command: ["--web.listen-address=10.100.10.102:9187"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
