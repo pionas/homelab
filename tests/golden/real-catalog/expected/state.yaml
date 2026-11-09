@@ -39,6 +39,7 @@ machines:
       - mariadb
       - rustfs
       - valkey
+      - redpanda
     wg_public_key: C0VfyA+lTNvifCEPYGasL57bxTD+HX7psNwyD4+rty0=
   - name: vps3
     endpoint: 192.168.56.13

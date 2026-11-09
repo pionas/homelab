@@ -1028,3 +1028,32 @@ valkey_package() {
     [[ $output != *ufw* ]]
   done
 }
+
+# --- 34 redpanda (catalog service) ------------------------------------------------------
+
+redpanda_package() {
+  service_package redpanda docker-compose.yml redpanda.env redpanda.yaml
+  printf 'enable_sasl: true\nsuperusers:\n  - root\n' >"$PKG/node/services/redpanda/bootstrap.yaml"
+  node_env compose 51820 22 "redpanda" "8081 9092 9644" ""
+  printf 'COMPOSE_SERVICES="redpanda"\n' >>"$PKG/node/node.env"
+}
+
+@test "34: redpanda installs env (600), node config and .bootstrap.yaml owned by the redpanda user" {
+  redpanda_package
+  service redpanda
+  [ "$status" -eq 0 ]
+  [[ $output == *"install -D -m 600 $PKG/node/services/redpanda/redpanda.env /opt/homelab/redpanda/redpanda.env"* ]]
+  [[ $output == *"install -d -m 700 -o 101 -g 101 /opt/homelab/redpanda/config /var/lib/homelab/data/redpanda"* ]]
+  before "install -m 644 -o 101 -g 101 $PKG/node/services/redpanda/bootstrap.yaml /opt/homelab/redpanda/config/.bootstrap.yaml" \
+    'docker compose -f /opt/homelab/redpanda/docker-compose.yml up -d'
+  [[ $stderr == *"Kafka API on 10.100.10.101:9092 (SASL/SCRAM-SHA-256)"* ]]
+}
+
+@test "34: redpanda refuses a bootstrap file without SASL" {
+  redpanda_package
+  printf 'superusers:\n  - root\n' >"$PKG/node/services/redpanda/bootstrap.yaml"
+  service redpanda
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"without SASL"* ]]
+  [[ $output != *"[dry-run]"* ]]
+}
