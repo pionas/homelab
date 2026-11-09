@@ -132,7 +132,15 @@
 755 vps2/services/node-exporter/install.sh
 600 vps2/services/node-exporter/node-exporter.yaml
 700 vps2/services/postgres-exporter
+600 vps2/services/postgres-exporter/docker-compose.yml
+755 vps2/services/postgres-exporter/install.sh
+600 vps2/services/postgres-exporter/postgres-exporter.env
 700 vps2/services/postgresql
+600 vps2/services/postgresql/docker-compose.yml
+700 vps2/services/postgresql/initdb
+755 vps2/services/postgresql/initdb/10-homelab-accounts.sh
+755 vps2/services/postgresql/install.sh
+600 vps2/services/postgresql/postgresql.env
 600 vps2.tar.gz
 600 vps2/wg0.conf
 700 vps3

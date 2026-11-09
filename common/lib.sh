@@ -286,6 +286,23 @@ service_runtime() {
   fi
 }
 
+# install_service_files ID FILE... — copies the service's FILEs (relative to its package directory,
+# services/ID/) to $HOMELAB_COMPOSE_ROOT/ID. *.env files hold passwords: mode 600, others 644.
+# All files are checked before anything is copied.
+install_service_files() {
+  local id=$1 src=$HOMELAB_NODE_DIR/services/$1 f mode
+  shift
+  for f in "$@"; do
+    [[ -r $src/$f ]] || die "missing $src/$f: regenerate the package"
+  done
+  run install -d -m 755 "$HOMELAB_COMPOSE_ROOT/$id"
+  for f in "$@"; do
+    mode=644
+    [[ $f == *.env ]] && mode=600
+    run install -D -m "$mode" "$src/$f" "$HOMELAB_COMPOSE_ROOT/$id/$f"
+  done
+}
+
 # compose_up ID — (re)creates the service's containers, so changed config files are picked up.
 compose_up() {
   if in_container; then

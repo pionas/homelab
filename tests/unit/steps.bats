@@ -852,3 +852,49 @@ traefik_package() {
   [[ $stderr == *"traefik.yml has no step-ca address"* ]]
   [[ $output != *"[dry-run]"* ]]
 }
+
+# --- 30 postgresql, 39 postgres-exporter (catalog services) --------------------------
+
+@test "30: postgresql copies compose, the env file (600) and the init script, creates the data dir" {
+  service_package postgresql docker-compose.yml postgresql.env
+  mkdir -p "$PKG/node/services/postgresql/initdb" && echo x >"$PKG/node/services/postgresql/initdb/10-homelab-accounts.sh"
+  node_env compose 51820 22 "postgresql" "5432" ""
+  printf 'COMPOSE_SERVICES="postgresql"\n' >>"$PKG/node/node.env"
+  service postgresql
+  [ "$status" -eq 0 ]
+  [[ $output == *"install -D -m 600 $PKG/node/services/postgresql/postgresql.env /opt/homelab/postgresql/postgresql.env"* ]]
+  [[ $output == *"install -D -m 644 $PKG/node/services/postgresql/initdb/10-homelab-accounts.sh"* ]]
+  before 'install -d -m 700 /var/lib/homelab/data/postgresql' 'docker compose -f /opt/homelab/postgresql/docker-compose.yml up -d'
+}
+
+@test "30: postgresql stops before changes when a package file is missing" {
+  service_package postgresql docker-compose.yml
+  node_env compose 51820 22 "postgresql" "5432" ""
+  printf 'COMPOSE_SERVICES="postgresql"\n' >>"$PKG/node/node.env"
+  service postgresql
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"missing $PKG/node/services/postgresql/postgresql.env"* ]]
+  [[ $output != *"[dry-run]"* ]]
+}
+
+@test "39: postgres-exporter installs its env file (600) and starts" {
+  service_package postgres-exporter docker-compose.yml postgres-exporter.env
+  node_env compose 51820 22 "postgresql postgres-exporter" "5432 9187" ""
+  printf 'COMPOSE_SERVICES="postgresql postgres-exporter"\n' >>"$PKG/node/node.env"
+  service postgres-exporter
+  [ "$status" -eq 0 ]
+  [[ $output == *"install -D -m 600 $PKG/node/services/postgres-exporter/postgres-exporter.env"* ]]
+  [[ $output == *"docker compose -f /opt/homelab/postgres-exporter/docker-compose.yml up -d"* ]]
+}
+
+@test "postgresql init script: names and passwords go to psql as variables, never into the SQL" {
+  local evil="x'; DROP DATABASE postgres; --"
+  fake psql 'printf "%s\n" "$@" >"'"$T"'/psql.args"; cat >"'"$T"'/psql.sql"'
+  run env PATH="$T/bin:$PATH" POSTGRES_USER=root POSTGRESQL_DEFAULT_USERNAME=app POSTGRESQL_DEFAULT_PASSWORD="$evil" \
+    POSTGRESQL_VIEWER_USERNAME=viewer POSTGRESQL_VIEWER_PASSWORD=v bash "$REPO_ROOT/catalog/postgresql/initdb/10-homelab-accounts.sh"
+  [ "$status" -eq 0 ]
+  grep -qxF -- "--set=app_pass=$evil" "$T/psql.args"
+  run ! grep -qF 'DROP' "$T/psql.sql"
+  grep -qxF "CREATE ROLE :\"app_user\" LOGIN PASSWORD :'app_pass';" "$T/psql.sql"
+  grep -qxF 'GRANT pg_monitor, pg_read_all_data TO :"viewer_user";' "$T/psql.sql"
+}

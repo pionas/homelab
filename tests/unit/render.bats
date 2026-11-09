@@ -222,3 +222,20 @@ listing() { tar -tzf "$OUT/$1.tar.gz"; }
   [ "$(yq '.http.routers | length' "$OUT/edge/services/traefik/dynamic/routes.yml")" = 0 ]
   [ "$(yq '.http.services | length' "$OUT/edge/services/traefik/dynamic/routes.yml")" = 0 ]
 }
+
+@test "real catalog: data services keep passwords out of compose files; env files are 600; ports on WG" {
+  local out="$BATS_TEST_TMPDIR/data"
+  run "$REPO_ROOT/wizard.sh" --out "$out" --gitops-repo git@example.com:g.git \
+    --answers "$REPO_ROOT/tests/golden/real-catalog/answers.txt"
+  [ "$status" -eq 0 ]
+  local pw f
+  pw=$(sed -n 's/^POSTGRESQL_ROOT_PASSWORD=//p' "$out/vps2/secrets.env")
+  [ -n "$pw" ]
+  run grep -rlF "$pw" "$out/vps2/services"
+  [ "$output" = "$out/vps2/services/postgresql/postgresql.env" ]
+  for f in "$out"/vps2/services/*/*.env; do [ "$(stat -c %a "$f")" = 600 ]; done
+  grep -qF '"10.100.10.102:5432:5432"' "$out/vps2/services/postgresql/docker-compose.yml"
+  grep -qx 'DATA_SOURCE_USER=viewer' "$out/vps2/services/postgres-exporter/postgres-exporter.env"
+  run ! grep -rq '0\.0\.0\.0' "$out/vps2/services/postgresql" "$out/vps2/services/postgres-exporter"
+  [ "$(stat -c %a "$out/vps2/services/postgresql/install.sh")" = 755 ] # no group/other write
+}
