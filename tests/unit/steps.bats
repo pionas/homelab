@@ -822,3 +822,33 @@ step_ca_package() {
   [ "$status" -eq 1 ]
   [[ $stderr == *"DOMAIN must be a domain name"* ]]
 }
+
+# --- 40 traefik (catalog service) ---------------------------------------------------
+
+traefik_package() {
+  service_package traefik docker-compose.yml
+  mkdir -p "$PKG/node/services/traefik/dynamic"
+  echo 'http: {}' >"$PKG/node/services/traefik/dynamic/routes.yml"
+  printf 'certificatesResolvers:\n  acme:\n    acme:\n      caServer: "https://10.100.10.101:9000/acme/acme/directory"\n' \
+    >"$PKG/node/services/traefik/traefik.yml"
+  node_env compose 51820 22 "traefik" "" "80 443"
+  printf 'COMPOSE_SERVICES="traefik"\n' >>"$PKG/node/node.env"
+}
+
+@test "40: traefik installs config, routes and root CA; a new acme.json is created with mode 600" {
+  traefik_package
+  service traefik
+  [ "$status" -eq 0 ]
+  [[ $output == *"install -m 644 $PKG/node/services/traefik/dynamic/routes.yml /opt/homelab/traefik/dynamic/routes.yml"* ]]
+  [[ $output == *"install -m 644 $PKG/common/root_ca.crt /opt/homelab/traefik/root_ca.crt"* ]]
+  before 'install -m 600 /dev/null /opt/homelab/traefik/acme/acme.json' 'up -d --force-recreate'
+}
+
+@test "40: traefik without a step-ca address stops before anything changes" {
+  traefik_package
+  echo 'certificatesResolvers: {}' >"$PKG/node/services/traefik/traefik.yml"
+  service traefik
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"traefik.yml has no step-ca address"* ]]
+  [[ $output != *"[dry-run]"* ]]
+}

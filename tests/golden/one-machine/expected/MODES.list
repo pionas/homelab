@@ -34,6 +34,8 @@
 775 edge/services/postgresql/install.sh
 700 edge/services/step-ca
 700 edge/services/traefik
+700 edge/services/traefik/dynamic
+600 edge/services/traefik/dynamic/routes.yml
 600 edge.tar.gz
 600 edge/wg0.conf
 600 INSTALL_ORDER.md

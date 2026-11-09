@@ -17,4 +17,6 @@ edge/secrets.env
 edge/services/
 edge/services/node-agent/
 edge/services/traefik/
+edge/services/traefik/dynamic/
+edge/services/traefik/dynamic/routes.yml
 edge/wg0.conf

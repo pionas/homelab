@@ -216,8 +216,9 @@ field() { yq "$1" "$OUT/state.yaml"; }
 }
 
 @test "without --answers and without a terminal the wizard falls back to read" {
-  # DEFAULT_RUNTIME MACHINES DEVICES, then edge: NAME ENDPOINT WG_PORT SSH_PORT OS ARGOCD RUNTIME SERVICES
-  printf '%s\n' compose 1 laptop:linux edge 203.0.113.10 '' '' debian no compose step-ca >"$BATS_TEST_TMPDIR/in"
+  # DEFAULT_RUNTIME MACHINES DEVICES, then edge: NAME ENDPOINT WG_PORT SSH_PORT OS ARGOCD RUNTIME SERVICES,
+  # then ROUTES (empty line = default: none)
+  printf '%s\n' compose 1 laptop:linux edge 203.0.113.10 '' '' debian no compose step-ca '' >"$BATS_TEST_TMPDIR/in"
   run bash -c '"$REPO_ROOT/wizard.sh" --catalog "'"$CAT"'" --out "'"$OUT"'" --gitops-repo x <"'"$BATS_TEST_TMPDIR"'/in"'
   [ "$status" -eq 0 ]
   [ "$(field '.machines[0] | [.name, .wg_port, .ssh_port, (.services | join(","))] | join(" ")')" = \
@@ -257,4 +258,37 @@ field() { yq "$1" "$OUT/state.yaml"; }
   [ "$status" -eq 1 ]
   [[ $output == *"machine name ca is reserved for the homelab.internal zone"* ]]
   [[ $output == *"machine name ns is reserved"* ]]
+}
+
+# --- routes (Traefik) ----------------------------------------------------------------
+
+@test "routes: ROUTES host:machine[:fallback]; absent means no routes" {
+  wizard two-machines.txt --gitops-repo "$REPO"
+  [ "$status" -eq 0 ]
+  [ "$(field '.routes // [] | length')" = 0 ]
+  printf 'ROUTES="app.homelab.internal:vps1:edge shop.example.org:vps1"\n' | cat "$ANS/two-machines.txt" - >"$BATS_TEST_TMPDIR/a.txt"
+  rm -rf "$OUT"
+  run "$REPO_ROOT/wizard.sh" --catalog "$CAT" --out "$OUT" --answers "$BATS_TEST_TMPDIR/a.txt" --gitops-repo "$REPO"
+  [ "$status" -eq 0 ]
+  [ "$(field '.routes[] | .host + ":" + .machine + ":" + (.fallback // "-")')" = \
+    $'app.homelab.internal:vps1:edge\nshop.example.org:vps1:-' ]
+}
+
+@test "routes: malformed entry and unknown machine are rejected" {
+  printf 'ROUTES="app.homelab.internal"\n' | cat "$ANS/two-machines.txt" - >"$BATS_TEST_TMPDIR/a.txt"
+  run "$REPO_ROOT/wizard.sh" --catalog "$CAT" --out "$OUT" --answers "$BATS_TEST_TMPDIR/a.txt" --gitops-repo "$REPO"
+  [ "$status" -ne 0 ]
+  [[ $output == *"ROUTES: expected host:machine[:fallback_machine], got: app.homelab.internal"* ]]
+  printf 'ROUTES="app.homelab.internal:vps9"\n' | cat "$ANS/two-machines.txt" - >"$BATS_TEST_TMPDIR/a.txt"
+  run "$REPO_ROOT/wizard.sh" --catalog "$CAT" --out "$OUT" --answers "$BATS_TEST_TMPDIR/a.txt" --gitops-repo "$REPO"
+  [ "$status" -ne 0 ]
+  [[ $output == *"unknown machine 'vps9'"* ]]
+}
+
+@test "routes: a host in the zone may not take a machine or panel name" {
+  printf 'ROUTES="vps1.homelab.internal:vps1 argo.homelab.internal:vps1"\n' | cat "$ANS/two-machines.txt" - >"$BATS_TEST_TMPDIR/a.txt"
+  run "$REPO_ROOT/wizard.sh" --catalog "$CAT" --out "$OUT" --answers "$BATS_TEST_TMPDIR/a.txt" --gitops-repo "$REPO"
+  [ "$status" -ne 0 ]
+  [[ $output == *"route host vps1.homelab.internal clashes with a machine or panel name"* ]]
+  [[ $output == *"route host argo.homelab.internal clashes"* ]]
 }

@@ -191,3 +191,34 @@ listing() { tar -tzf "$OUT/$1.tar.gz"; }
   docker compose -f "$out/edge/services/node-exporter/docker-compose.yml" config -q
   kubeconform -strict -summary "$out/vps1/services/node-exporter/node-exporter.yaml" "$out/common/argocd-rbac.yaml"
 }
+
+@test "real catalog: Traefik routes, failover with health checks, ACME from step-ca, public ports only on the edge" {
+  local out="$BATS_TEST_TMPDIR/routes"
+  run "$REPO_ROOT/wizard.sh" --out "$out" --gitops-repo git@example.com:g.git \
+    --answers "$REPO_ROOT/tests/golden/real-catalog/answers.txt"
+  [ "$status" -eq 0 ]
+  local routes="$out/edge/services/traefik/dynamic/routes.yml" svc main
+  yq '.' "$routes" >/dev/null
+  # Every failover service's main backend has a health check (failover cannot work without it).
+  for svc in $(yq '.http.services | to_entries[] | select(.value.failover) | .key' "$routes"); do
+    main=$(yq ".http.services.\"$svc\".failover.service" "$routes")
+    [ "$(yq ".http.services.\"$main\".loadBalancer.healthCheck.path" "$routes")" = /healthz ]
+  done
+  [ "$(yq '.http.services | to_entries[] | select(.value.failover) | .key' "$routes")" = e-konkursy_homelab_internal ]
+  [ "$(yq '.http.services.e-konkursy_homelab_internal-main.loadBalancer.servers[0].url' "$routes")" = http://10.100.10.103:80 ]
+  [ "$(yq '.http.services.e-konkursy_homelab_internal-fallback.loadBalancer.servers[0].url' "$routes")" = http://10.100.10.101:80 ]
+  [ "$(yq '.http.routers.pionas_dev.tls.certResolver' "$routes")" = acme ]
+  grep -qF 'caServer: "https://10.100.10.101:9000/acme/acme/directory"' "$out/edge/services/traefik/traefik.yml"
+  # Public (not WG-bound) port mappings: Traefik on the edge only.
+  run grep -rlE '^\s+- "[0-9]+:[0-9]+"' "$out" --include=docker-compose.yml
+  [ "$output" = "$out/edge/services/traefik/docker-compose.yml" ]
+  grep -qF 'extra_hosts: ["e-konkursy.homelab.internal:10.100.10.100", "pionas.dev:10.100.10.100"]' \
+    "$out/vps1/services/step-ca/docker-compose.yml"
+  grep -qx 'e-konkursy IN A 10.100.10.100' "$out/vps1/services/coredns/db.homelab.internal"
+  run ! grep -q pionas "$out/vps1/services/coredns/db.homelab.internal" # outside the zone
+}
+
+@test "no routes: Traefik gets an empty, valid dynamic configuration" {
+  [ "$(yq '.http.routers | length' "$OUT/edge/services/traefik/dynamic/routes.yml")" = 0 ]
+  [ "$(yq '.http.services | length' "$OUT/edge/services/traefik/dynamic/routes.yml")" = 0 ]
+}
