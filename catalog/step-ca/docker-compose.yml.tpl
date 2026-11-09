@@ -8,6 +8,8 @@ services:
     command: ["/usr/local/bin/step-ca", "/home/step/config/ca.json"]
     ports:
       - "${WG_IP}:9000:9000"
+    # Route hosts -> the edge, so ACME HTTP-01 checks reach Traefik without depending on CoreDNS.
+    extra_hosts: ${ACME_EXTRA_HOSTS}
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]

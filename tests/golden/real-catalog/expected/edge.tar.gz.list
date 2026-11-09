@@ -20,4 +20,9 @@ edge/services/node-exporter/docker-compose.yml
 edge/services/node-exporter/install.sh
 edge/services/node-exporter/node-exporter.yaml
 edge/services/traefik/
+edge/services/traefik/docker-compose.yml
+edge/services/traefik/dynamic/
+edge/services/traefik/dynamic/routes.yml
+edge/services/traefik/install.sh
+edge/services/traefik/traefik.yml
 edge/wg0.conf

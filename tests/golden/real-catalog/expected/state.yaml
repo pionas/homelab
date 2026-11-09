@@ -56,3 +56,13 @@ admin_devices:
     type: android
     wg_ip: 10.100.10.201
     wg_public_key: 9LYW+m+cDnLXd8TkJzGPagWOoInpgrize+bTWqw5eXI=
+routes:
+  - host: e-konkursy.homelab.internal
+    machine: vps3
+    fallback: vps1
+    port: 80
+    health_path: /healthz
+  - host: pionas.dev
+    machine: vps3
+    port: 80
+    health_path: /healthz

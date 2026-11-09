@@ -33,6 +33,11 @@
 775 edge/services/node-exporter/install.sh
 600 edge/services/node-exporter/node-exporter.yaml
 700 edge/services/traefik
+600 edge/services/traefik/docker-compose.yml
+700 edge/services/traefik/dynamic
+600 edge/services/traefik/dynamic/routes.yml
+775 edge/services/traefik/install.sh
+600 edge/services/traefik/traefik.yml
 600 edge.tar.gz
 600 edge/wg0.conf
 600 INSTALL_ORDER.md
