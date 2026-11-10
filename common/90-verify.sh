@@ -103,11 +103,25 @@ verify_node_exporter() {
   fi
 }
 
+verify_openbao() {
+  [[ " ${SERVICES:-} " == *" openbao "* ]] || return 0
+  if in_container; then
+    container_skip "OpenBao check (it does not run in a container)"
+    return 0
+  fi
+  if docker exec homelab-openbao bao status -format=json 2>/dev/null | grep -Eq '"sealed": *false'; then
+    ok "OpenBao unsealed"
+  else
+    bad "OpenBao is sealed or not running (systemctl status homelab-openbao-unseal)"
+  fi
+}
+
 verify_wireguard
 verify_ssh
 verify_firewall
 verify_ca
 verify_k3s
 verify_node_exporter
+verify_openbao
 ((FAILED == 0)) || die "verification of $NODE_NAME failed, see the errors above"
 log_info "verification of $NODE_NAME passed"

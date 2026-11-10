@@ -110,7 +110,9 @@ listing() { tar -tzf "$OUT/$1.tar.gz"; }
     state_load "$OUT/state.yaml"; render_all "$OUT"
     state_set_services vps2 node-agent redis; render_all "$OUT"'
   [ "$status" -eq 0 ]
-  cmp "$OUT/vps1.tar.gz" "$copy/vps1.tar.gz"
+  # vps3 is not affected; vps1 (OpenBao, holds every service's secrets) loses postgresql's.
+  cmp "$OUT/vps3.tar.gz" "$copy/vps3.tar.gz"
+  [[ $(tar -tzf "$copy/vps1.tar.gz") != *kv/postgresql.json* ]]
   [ ! -e "$copy/vps2/services/postgresql" ]
   [[ $(tar -tzf "$copy/vps2.tar.gz") != *postgresql* ]]
 }
@@ -352,4 +354,23 @@ listing() { tar -tzf "$OUT/$1.tar.gz"; }
   grep -qF '"10.100.10.102:8108:8108"' "$d/docker-compose.yml"
   [ "$(yq '.services.typesense.user' "$d/docker-compose.yml")" = 10000:10000 ]
   run ! grep -q -- '--api-key' "$d/docker-compose.yml"
+}
+
+@test "real catalog: only the OpenBao machine gets kv/<service>.json with every service's accounts (600)" {
+  local out="$BATS_TEST_TMPDIR/bao"
+  run "$REPO_ROOT/wizard.sh" --out "$out" --gitops-repo git@example.com:g.git \
+    --answers "$REPO_ROOT/tests/golden/real-catalog/answers.txt"
+  [ "$status" -eq 0 ]
+  local kv="$out/vps1/services/openbao/kv" f
+  run bash -c "cd '$kv' && ls"
+  [ "$output" = "$(printf '%s\n' argocd.json mariadb.json openbao.json postgresql.json redpanda.json rustfs.json step-ca.json typesense.json valkey.json)" ]
+  for f in "$kv"/*.json; do
+    yq -p json '.' "$f" >/dev/null
+    [ "$(stat -c %a "$f")" = 600 ]
+  done
+  [ "$(yq -p json -r '.ROOT_PASSWORD' "$kv/postgresql.json")" = "$(sed -n 's/^POSTGRESQL_ROOT_PASSWORD=//p' "$out/secrets.env")" ]
+  [ "$(yq -p json -r '.VIEWER_USERNAME' "$kv/valkey.json")" = viewer ]
+  run find "$out" -path '*/kv/*.json' -not -path "$out/vps1/*"
+  [ -z "$output" ]
+  [[ $(tar -tzf "$out/vps2.tar.gz") != *kv/* ]]
 }
