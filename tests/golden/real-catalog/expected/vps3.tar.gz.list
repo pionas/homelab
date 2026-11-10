@@ -29,6 +29,8 @@ vps3/k3s-ca/vps3/service.key
 vps3/node.env
 vps3/secrets.env
 vps3/services/
+vps3/services/app-cluster/
+vps3/services/app-cluster/install.sh
 vps3/services/node-exporter/
 vps3/services/node-exporter/docker-compose.yml
 vps3/services/node-exporter/install.sh

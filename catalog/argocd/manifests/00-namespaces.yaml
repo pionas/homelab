@@ -1,0 +1,14 @@
+# Namespaces the other manifests need before ArgoCD or External Secrets create them.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argocd
+  labels:
+    app.kubernetes.io/managed-by: homelab
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: external-secrets
+  labels:
+    app.kubernetes.io/managed-by: homelab

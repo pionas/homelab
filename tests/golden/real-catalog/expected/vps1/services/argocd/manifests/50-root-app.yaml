@@ -1,0 +1,22 @@
+# App of apps: everything else comes from the homelab-gitops repository (path apps/), read with the
+# wizard's read-only deploy key (repository Secret in 20-repo.yaml).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: homelab-root
+  namespace: argocd
+  labels:
+    app.kubernetes.io/managed-by: homelab
+spec:
+  project: default
+  source:
+    repoURL: "git@example.com:pionas/homelab-gitops.git"
+    targetRevision: HEAD
+    path: apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

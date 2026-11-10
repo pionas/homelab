@@ -10,6 +10,13 @@ _RENDER_LIB=${BASH_SOURCE[0]%/*}
 source "$_RENDER_LIB/ca.sh"
 # shellcheck source=lib/secrets.sh
 source "$_RENDER_LIB/secrets.sh"
+# shellcheck source=lib/gitops.sh
+source "$_RENDER_LIB/gitops.sh"
+
+# Injectable (golden tests): prints a 22-character bcrypt salt.
+ARGOCD_SALT_GENERATOR=${ARGOCD_SALT_GENERATOR:-render_bcrypt_salt}
+# k3s API port of every cluster (step 11; reachable from WireGuard only, step 03).
+RENDER_K3S_API_PORT=6443
 
 RENDER_COMMON_SRC=${RENDER_COMMON_SRC:-$_RENDER_LIB/../common}
 # Steps inside a common/ file that --step can name; they run the file they live in.
@@ -110,6 +117,8 @@ _render_templates() {
 #   <PREFIX>_PORT_<p> the same for every service on this machine (an exporter reaching its database)
 #   STEP_CA_IP        WireGuard address of the step-ca machine (Traefik's ACME server)
 #   STEP_CA_PORT      its port (default 9000, unless moved on that machine)
+#   GITOPS_REPO       the homelab-gitops repository (state.yaml, validated SSH URL)
+#   OPENBAO_URL       http://<OpenBao machine WG address>:<port> for External Secrets
 #   ACME_EXTRA_HOSTS  route hosts -> the edge, as a YAML flow list for step-ca's extra_hosts, so the
 #                     HTTP-01 check reaches Traefik without depending on CoreDNS
 _render_computed_vars() {
@@ -126,6 +135,15 @@ _render_computed_vars() {
   ca_machine=$(state_query '[.machines[] | select(.services[] == "step-ca") | .name][0] // ""')
   printf 'STEP_CA_IP=%s\n' "$(state_query '[.machines[] | select(.services[] == "step-ca") | .wg_ip][0] // ""')"
   printf 'STEP_CA_PORT=%s\n' "$([[ -n $ca_machine ]] && state_port "$ca_machine" step-ca 9000)"
+  printf 'GITOPS_REPO=%s\n' "$(state_query '.gitops_repo')"
+  local bao_machine
+  bao_machine=$(state_query '[.machines[] | select(.services[] == "openbao") | .name][0] // ""')
+  if [[ -n $bao_machine ]]; then
+    printf 'OPENBAO_URL=http://%s:%s\n' "$(N=$bao_machine state_query '.machines[] | select(.name == strenv(N)) | .wg_ip')" \
+      "$(state_port "$bao_machine" openbao 8200)"
+  else
+    printf 'OPENBAO_URL=\n'
+  fi
   printf 'ACME_EXTRA_HOSTS=[%s]\n' "$(E=$edge state_query '[(.routes // [])[] | "\"" + .host + ":" + strenv(E) + "\""] | join(", ")')"
 }
 
@@ -242,12 +260,82 @@ render_openbao_kv() {
   done
 }
 
+render_bcrypt_salt() { openssl rand -base64 32 | tr -dc './A-Za-z0-9' | cut -c1-22; }
+
+# _render_bcrypt PASSWORD — bcrypt hash (cost 10) with libxcrypt's crypt() through perl (there is no
+# bcrypt in openssl); the password goes to perl on stdin.
+_render_bcrypt() {
+  local salt hash
+  salt=$("$ARGOCD_SALT_GENERATOR")
+  [[ $salt =~ ^[./A-Za-z0-9]{22}$ ]] || {
+    log_error "bcrypt salt generator $ARGOCD_SALT_GENERATOR returned an invalid salt"
+    return 1
+  }
+  hash=$(printf '%s' "$1" | SALT=$salt perl -e 'my $pw = <STDIN>; print crypt($pw, q($2b$10$) . $ENV{SALT})')
+  [[ $hash =~ ^\$2b\$10\$[./A-Za-z0-9]{53}$ ]] || {
+    log_error "bcrypt hashing failed (perl crypt without bcrypt support?)"
+    return 1
+  }
+  printf '%s\n' "$hash"
+}
+
+# render_argocd DIR OUT_DIR MACHINE_DIR — what only the ArgoCD machine gets: the admin password hash,
+# the repository Secret with the read-only deploy key and a cluster Secret per application cluster.
+render_argocd() {
+  local dir=$1 out_dir=$2 name ip key line hash
+  _secrets_read "$3/secrets.env" || return 1
+  hash=$(_render_bcrypt "${_SECRETS[ARGOCD_ROOT_PASSWORD]}") || return 1
+  mkdir -p "$dir/manifests" "$dir/clusters"
+  {
+    printf '# ArgoCD admin password (bcrypt of ARGOCD_ROOT_PASSWORD); merged into argocd-secret.\n'
+    printf 'apiVersion: v1\nkind: Secret\nmetadata:\n  name: argocd-secret\n  namespace: argocd\ntype: Opaque\nstringData:\n'
+    printf '  admin.password: "%s"\n  admin.passwordMtime: "2000-01-01T00:00:00Z"\n' "$hash"
+  } >"$dir/manifests/10-argocd-admin.yaml"
+  key=$(gitops_key_file "$out_dir")
+  [[ -r $key ]] || {
+    log_error "missing deploy key $key (gitops_ensure_deploy_key)"
+    return 1
+  }
+  {
+    printf '# Repository homelab-gitops, read with the read-only deploy key (public half: INSTALL_ORDER.md).\n'
+    printf 'apiVersion: v1\nkind: Secret\nmetadata:\n  name: repo-homelab-gitops\n  namespace: argocd\n'
+    printf '  labels:\n    argocd.argoproj.io/secret-type: repository\ntype: Opaque\nstringData:\n'
+    printf '  type: git\n  url: "%s"\n  sshPrivateKey: |\n' "$(state_query '.gitops_repo')"
+    while IFS= read -r line; do printf '    %s\n' "$line"; done <"$key"
+  } >"$dir/manifests/20-repo.yaml"
+  # Application clusters other than ArgoCD's own (that one is in-cluster already).
+  while IFS=$'\t' read -r name ip; do
+    # yq prints an empty line for an empty selection.
+    [[ -z $name || $name == "${3##*/}" ]] && continue
+    _render_argocd_cluster "$out_dir" "$name" "$ip" >"$dir/clusters/$name.yaml" || return 1
+  done < <(state_query '.machines[] | select(.services[] == "app-cluster") | [.name, .wg_ip] | @tsv')
+}
+
+# _render_argocd_cluster OUT_DIR NAME IP — the cluster Secret: the API on the WireGuard address, the
+# cluster's own CA and the argocd client certificate signed by its client-ca (lib/ca.sh).
+_render_argocd_cluster() {
+  local ca=$1/k3s-ca/$2 f
+  for f in server-ca.crt argocd.crt argocd.key; do
+    [[ -r $ca/$f ]] || {
+      log_error "missing $ca/$f (ca_ensure_k3s_cluster)"
+      return 1
+    }
+  done
+  printf '# ArgoCD cluster %s (generated by the wizard).\n' "$2"
+  printf 'apiVersion: v1\nkind: Secret\nmetadata:\n  name: cluster-%s\n  namespace: argocd\n' "$2"
+  printf '  labels:\n    argocd.argoproj.io/secret-type: cluster\ntype: Opaque\nstringData:\n'
+  printf '  name: "%s"\n  server: "https://%s:%s"\n' "$2" "$3" "$RENDER_K3S_API_PORT"
+  printf '  config: |\n    {"tlsClientConfig": {"caData": "%s", "certData": "%s", "keyData": "%s"}}\n' \
+    "$(base64 -w0 <"$ca/server-ca.crt")" "$(base64 -w0 <"$ca/argocd.crt")" "$(base64 -w0 <"$ca/argocd.key")"
+}
+
 # _render_service_extras DIR ID MACHINE_DIR — files a service needs that are computed from the
 # whole state or from the machine's secrets.
 _render_service_extras() {
   case $2 in
     valkey) render_valkey_acl "$3" >"$1/users.acl" ;;
     openbao) render_openbao_kv "$1" "${3%/*}" ;;
+    argocd) render_argocd "$1" "${3%/*}" "$3" ;;
     coredns) render_dns_zone >"$1/db.$STATE_DOMAIN" ;;
     traefik)
       mkdir -p "$1/dynamic"
@@ -396,6 +484,12 @@ render_install_order() {
         n=$((n + 1))
         printf '| %s | %s | %s | %s | %s |\n' "$n" "$name" "$ip" "$min" "$id" # id: the service list
       done
+    if [[ -n $(state_query '[.machines[] | select(.services[] == "argocd")][0] // ""') ]]; then
+      printf '\n## GitOps repository (before installing ArgoCD)\n\n'
+      # shellcheck disable=SC2016 # Markdown backticks
+      printf 'Add this public key to `%s` as a **read-only** deploy key:\n\n```\n%s\n```\n' \
+        "$(state_query '.gitops_repo')" "$(gitops_public_key "$out_dir")"
+    fi
   } >"$out_dir/INSTALL_ORDER.md"
 }
 

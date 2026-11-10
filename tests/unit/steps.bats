@@ -1080,7 +1080,9 @@ redpanda_package() {
 openbao_package() {
   local d=$PKG/node/services/openbao f
   mkdir -p "$d/kv"
-  cp "$REPO_ROOT"/catalog/openbao/{install.sh,homelab-openbao-unseal.sh,homelab-openbao-unseal.service} "$d/"
+  cp "$REPO_ROOT"/catalog/openbao/{install.sh,homelab-openbao-unseal.sh,homelab-openbao-unseal.service,eso-read.hcl} "$d/"
+  printf 'OPENBAO_ESO_USERNAME=eso\nOPENBAO_ESO_PASSWORD=EsoTokenId1234567890\n' >"$PKG/node/secrets.env"
+  chmod 600 "$PKG/node/secrets.env"
   echo x >"$d/docker-compose.yml" && echo x >"$d/config.hcl"
   echo '{"ROOT_USERNAME": "root", "ROOT_PASSWORD": "pg-secret-value"}' >"$d/kv/postgresql.json"
   echo '{"DEFAULT_USERNAME": "app", "DEFAULT_PASSWORD": "valkey-secret"}' >"$d/kv/valkey.json"
@@ -1204,4 +1206,87 @@ openbao_initialized() {
   verify
   [ "$status" -eq 0 ]
   [[ $stderr == *"verify OK: OpenBao unsealed"* ]]
+}
+
+# --- 50 argocd, 60 app-cluster (catalog services) --------------------------------------
+
+argocd_package() {
+  local d=$PKG/node/services/argocd f
+  mkdir -p "$d/manifests" "$d/store" "$d/clusters"
+  cp "$REPO_ROOT/catalog/argocd/install.sh" "$d/"
+  for f in 00-namespaces 10-argocd-admin 20-repo 30-openbao-token 40-external-secrets-app 50-root-app; do
+    echo "kind: x" >"$d/manifests/$f.yaml"
+  done
+  echo 'kind: x' >"$d/clusters/vps3.yaml"
+  printf 'spec:\n  provider:\n    vault:\n      server: "http://10.100.10.101:8200"\n' >"$d/store/cluster-secret-store.yaml"
+  node_env k3s 51820 22 "argocd" "" ""
+  printf 'COMPOSE_SERVICES=""\n' >>"$PKG/node/node.env"
+}
+
+@test "50: argocd fetches the pinned manifest, checks it, applies namespaces -> ArgoCD -> ours -> clusters -> store" {
+  argocd_package
+  service argocd
+  [ "$status" -eq 0 ]
+  before 'curl .*https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.6/manifests/install.yaml' 'verify sha256 .* = 846c644b'
+  before 'verify sha256' 'k3s kubectl apply -f .*/manifests/00-namespaces.yaml'
+  before '00-namespaces.yaml' 'kubectl apply --server-side --force-conflicts -n argocd -f .*argocd-install-v3.5.6.yaml'
+  before 'argocd-install-v3.5.6.yaml' 'kubectl apply --server-side --force-conflicts -f .*/services/argocd/manifests/'
+  before 'services/argocd/manifests/' 'kubectl apply -f .*/services/argocd/clusters/'
+  before 'services/argocd/clusters/' 'kubectl apply -f .*/store/cluster-secret-store.yaml'
+  [[ $stderr == *"would wait for CRD clustersecretstores.external-secrets.io"* ]]
+}
+
+@test "50: argocd needs k3s, its package files and an OpenBao address" {
+  argocd_package
+  rm "$PKG/node/services/argocd/manifests/20-repo.yaml"
+  service argocd
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"missing $PKG/node/services/argocd/manifests/20-repo.yaml"* ]]
+  argocd_package
+  echo 'server: ""' >"$PKG/node/services/argocd/store/cluster-secret-store.yaml"
+  service argocd
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"no OpenBao address"* ]]
+  argocd_package
+  sed -i 's/^RUNTIME=.*/RUNTIME=compose/' "$PKG/node/node.env"
+  sed -i 's/^COMPOSE_SERVICES=.*/COMPOSE_SERVICES="argocd"/' "$PKG/node/node.env"
+  service argocd
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"argocd runs only in k3s"* ]]
+}
+
+@test "50: in a container ArgoCD is not installed" {
+  argocd_package
+  FAKE_CONTAINER=1 service argocd
+  [ "$status" -eq 0 ]
+  [[ $output != *"kubectl apply"* ]]
+  [[ $stderr == *"skipped in container: installing ArgoCD"* ]]
+}
+
+@test "60: app-cluster only checks the cluster (k3s only)" {
+  service_package app-cluster
+  node_env k3s 51820 22 "app-cluster" "" ""
+  printf 'COMPOSE_SERVICES=""\n' >>"$PKG/node/node.env"
+  service app-cluster
+  [ "$status" -eq 0 ]
+  [[ $stderr == *"would check the k3s API and the homelab-argocd binding"* ]]
+  [[ $output != *"[dry-run]"* ]]
+  node_env compose 51820 22 "app-cluster" "" ""
+  printf 'COMPOSE_SERVICES=""\n' >>"$PKG/node/node.env"
+  service app-cluster
+  [ "$status" -eq 1 ]
+}
+
+@test "45: OpenBao creates the read-only External Secrets token with the wizard's ID, on stdin" {
+  openbao_package
+  openbao_initialized
+  cp "$REPO_ROOT/catalog/openbao/eso-read.hcl" "$PKG/node/services/openbao/"
+  printf 'OPENBAO_ESO_USERNAME=eso\nOPENBAO_ESO_PASSWORD=EsoTokenId1234567890\nOPENBAO_ROOT_USERNAME=root\nOPENBAO_ROOT_PASSWORD=r\n' \
+    >"$PKG/node/secrets.env"
+  chmod 600 "$PKG/node/secrets.env"
+  FAKE_BAO=unsealed FAKE_BAO_KV=1 service openbao
+  [ "$status" -eq 0 ]
+  before 'bao policy write eso-read -' 'bao write sys/auth/token/tune max_lease_ttl=87600h'
+  before 'max_lease_ttl=87600h' 'bao write auth/token/create-orphan -'
+  [[ $output != *EsoTokenId1234567890* && $stderr != *EsoTokenId1234567890* ]]
 }

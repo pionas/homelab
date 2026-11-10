@@ -1,3 +1,3 @@
 user default off
-user app on #34b5ef741a73aeeab28fc8b8b50850deb0403aac23ad9d00de03866c8c51f9c9 ~* &* +@all -@admin
-user viewer on #ab9ef4e31b5b2608afea3759d9acbcecd5e4f12caecd4962a637f56ca614c0ad ~* resetchannels -@all +@read -@dangerous +info +ping +config|get +slowlog|get +latency|latest
+user app on #ab9ef4e31b5b2608afea3759d9acbcecd5e4f12caecd4962a637f56ca614c0ad ~* &* +@all -@admin
+user viewer on #19517cab0f49d55b539cf99665e79a7204755349feb0e6a05c95aa7f90e93bfd ~* resetchannels -@all +@read -@dangerous +info +ping +config|get +slowlog|get +latency|latest

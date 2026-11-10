@@ -130,7 +130,7 @@ field() { yq "$1" "$OUT/state.yaml"; }
 
 @test "validate_plan reports all errors at once (runtime fit, single twice, placement, ports, requires)" {
   run bash -c 'set -Eeuo pipefail; source "$REPO_ROOT/lib/validate.sh"; catalog_load "'"$CAT"'"
-    state_init repo compose
+    state_init git@example.com:g.git compose
     state_add_machine edge 10.0.0.1 debian compose 51820 6379; state_set_services edge node-agent traefik redis argocd
     state_add_machine vps1 10.0.0.2 debian compose; state_set_services vps1 node-agent traefik redis app-cluster
     validate_plan'
@@ -147,7 +147,7 @@ field() { yq "$1" "$OUT/state.yaml"; }
 @test "validate_plan: two services with the same port on one machine" {
   run bash -c 'set -Eeuo pipefail; source "$REPO_ROOT/lib/validate.sh"; catalog_load "'"$CAT"'"
     _CATALOG[redis,PORTS]=5432
-    state_init repo compose; state_add_machine edge 10.0.0.1 debian compose
+    state_init git@example.com:g.git compose; state_add_machine edge 10.0.0.1 debian compose
     state_set_services edge node-agent traefik step-ca postgresql redis; validate_plan'
   [ "$status" -eq 1 ]
   [[ $output == *"edge: port 5432/tcp used by both postgresql and redis"* ]]
@@ -219,7 +219,7 @@ field() { yq "$1" "$OUT/state.yaml"; }
   # DEFAULT_RUNTIME MACHINES DEVICES, then edge: NAME ENDPOINT WG_PORT SSH_PORT OS ARGOCD RUNTIME SERVICES,
   # then PORTS and ROUTES (empty lines = default: none)
   printf '%s\n' compose 1 laptop:linux edge 203.0.113.10 '' '' debian no compose step-ca '' '' >"$BATS_TEST_TMPDIR/in"
-  run bash -c '"$REPO_ROOT/wizard.sh" --catalog "'"$CAT"'" --out "'"$OUT"'" --gitops-repo x <"'"$BATS_TEST_TMPDIR"'/in"'
+  run bash -c '"$REPO_ROOT/wizard.sh" --catalog "'"$CAT"'" --out "'"$OUT"'" --gitops-repo git@example.com:g.git <"'"$BATS_TEST_TMPDIR"'/in"'
   [ "$status" -eq 0 ]
   [ "$(field '.machines[0] | [.name, .wg_port, .ssh_port, (.services | join(","))] | join(" ")')" = \
     "edge 51820 22 node-agent,step-ca,traefik" ]
@@ -251,7 +251,7 @@ field() { yq "$1" "$OUT/state.yaml"; }
 
 @test "validate_plan: machine names reserved for the DNS zone are rejected" {
   run bash -c 'set -Eeuo pipefail; source "$REPO_ROOT/lib/validate.sh"; catalog_load "'"$CAT"'"
-    state_init repo compose
+    state_init git@example.com:g.git compose
     state_add_machine edge 10.0.0.1 debian compose; state_set_services edge node-agent traefik step-ca coredns
     state_add_machine ca 10.0.0.2 debian compose; state_add_machine ns 10.0.0.3 debian compose
     validate_plan'

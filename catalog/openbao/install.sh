@@ -15,6 +15,8 @@ source "$SERVICE_DIR/../../../common/lib.sh"
 parse_common_args "$@"
 require_root
 load_node_env
+# The ESO token ID comes from the wizard (OPENBAO_ESO_PASSWORD), so ArgoCD's package has it too.
+load_env "$HOMELAB_NODE_DIR/secrets.env" '[A-Z][A-Z0-9_]*_(USERNAME|PASSWORD)' OPENBAO_ESO_PASSWORD
 
 SERVICE_ID=openbao
 CONTAINER=homelab-openbao
@@ -23,6 +25,10 @@ DATA_DIR=/var/lib/homelab/data/$SERVICE_ID
 INIT_DIR=$HOMELAB_STATE_DIR/openbao
 INIT_FILE=$INIT_DIR/init.json
 KV_MOUNT=homelab
+ESO_POLICY=eso-read
+# shortcut: a long-lived token for External Secrets (token auth, no renewal); move to the Kubernetes
+#   auth method once OpenBao can reach the cluster API.
+ESO_TOKEN_TTL=87600h
 UNSEAL_BIN=/usr/local/sbin/homelab-openbao-unseal
 UNSEAL_UNIT=/etc/systemd/system/homelab-openbao-unseal.service
 API_WAIT_SECONDS=120
@@ -109,7 +115,31 @@ unseal_and_load() {
     [[ $id =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || die "unexpected file name $f"
     bao_stdin kv put -mount="$KV_MOUNT" "$id" - <"$f"
   done
+  setup_eso_token
   unset BAO_TOKEN
+}
+
+# setup_eso_token — the read-only token External Secrets (on the ArgoCD cluster) uses. Its ID is the
+# wizard's OPENBAO_ESO_PASSWORD; created once, sent on stdin like every secret.
+setup_eso_token() {
+  [[ $OPENBAO_ESO_PASSWORD =~ ^[A-Za-z0-9_-]+$ ]] || die "OPENBAO_ESO_PASSWORD has characters OpenBao does not accept in a token ID"
+  bao_stdin policy write "$ESO_POLICY" - <"$SERVICE_DIR/eso-read.hcl"
+  bao write sys/auth/token/tune max_lease_ttl="$ESO_TOKEN_TTL"
+  if ! ((DRY_RUN)) && printf '{"token":"%s"}' "$OPENBAO_ESO_PASSWORD" |
+    docker exec -i -e BAO_TOKEN "$CONTAINER" bao write -format=json auth/token/lookup - >/dev/null 2>&1; then
+    log_info "External Secrets token exists"
+    return 0
+  fi
+  local request
+  request=$(printf '{"id":"%s","policies":["%s"],"no_default_policy":true,"ttl":"%s","display_name":"external-secrets"}' \
+    "$OPENBAO_ESO_PASSWORD" "$ESO_POLICY" "$ESO_TOKEN_TTL")
+  # The answer holds the token itself: shown with --dry-run (command only), discarded otherwise.
+  if ((DRY_RUN)); then
+    bao_stdin write auth/token/create-orphan - <<<"$request"
+  else
+    bao_stdin write auth/token/create-orphan - <<<"$request" >/dev/null
+  fi
+  log_info "External Secrets token created (policy $ESO_POLICY)"
 }
 
 install_unseal_unit() {

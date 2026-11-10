@@ -262,3 +262,18 @@ setup() {
   run in_lib "verify_gpg_fingerprint '$BATS_TEST_TMPDIR/ab.asc' $a"
   [ "$status" -eq 1 ]
 }
+
+@test "gitops deploy key: created once with mode 600, kept on later runs, a broken key is refused" {
+  run bash -c 'set -Eeuo pipefail; source "$REPO_ROOT/lib/gitops.sh"
+    gitops_ensure_deploy_key "'"$BATS_TEST_TMPDIR"'/out"; sha256sum "'"$BATS_TEST_TMPDIR"'/out/gitops/deploy_key"
+    gitops_ensure_deploy_key "'"$BATS_TEST_TMPDIR"'/out"; sha256sum "'"$BATS_TEST_TMPDIR"'/out/gitops/deploy_key"
+    gitops_public_key "'"$BATS_TEST_TMPDIR"'/out"'
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "${lines[1]}" ]
+  [[ ${lines[2]} == "ssh-ed25519 "* ]]
+  [ "$(stat -c %a "$BATS_TEST_TMPDIR/out/gitops/deploy_key")" = 600 ]
+  echo broken >"$BATS_TEST_TMPDIR/out/gitops/deploy_key"
+  run bash -c 'source "$REPO_ROOT/lib/gitops.sh"; gitops_ensure_deploy_key "'"$BATS_TEST_TMPDIR"'/out"'
+  [ "$status" -eq 1 ]
+  [[ $output == *"is not a usable private key"* && $output != *broken* ]]
+}

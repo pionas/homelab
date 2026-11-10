@@ -244,3 +244,16 @@ expect_state_invalid() {
   [ "$output" = false ]
   [[ $stderr == *"ports must be numbers"* && $stderr == *"port override db:5432 must be an integer 1-65535, got: '70000'"* ]]
 }
+
+@test "gitops_repo must be an SSH URL (ArgoCD reads it with the deploy key; it lands in manifests)" {
+  local bad
+  for bad in 'https://github.com/x/y.git' 'repo' 'git@host:y.git"; rm -rf /' 'git@ho st:y.git'; do
+    run --separate-stderr in_state "state_init '$bad' compose; state_add_machine edge 10.0.0.1 debian compose"
+    [ "$status" -eq 1 ]
+    [[ $stderr == *"gitops_repo must be an SSH URL"* ]]
+  done
+  for good in 'git@github.com:pionas/homelab-gitops.git' 'ssh://git@git.example.org:2222/team/gitops.git'; do
+    run in_state "state_init '$good' compose; state_add_machine edge 10.0.0.1 debian compose"
+    [ "$status" -eq 0 ]
+  done
+}

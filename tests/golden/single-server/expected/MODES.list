@@ -49,6 +49,7 @@
 700 edge/services/openbao
 600 edge/services/openbao/config.hcl
 600 edge/services/openbao/docker-compose.yml
+644 edge/services/openbao/eso-read.hcl
 644 edge/services/openbao/homelab-openbao-unseal.service
 644 edge/services/openbao/homelab-openbao-unseal.sh
 755 edge/services/openbao/install.sh

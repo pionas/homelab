@@ -40,6 +40,7 @@ edge/services/node-exporter/node-exporter.yaml
 edge/services/openbao/
 edge/services/openbao/config.hcl
 edge/services/openbao/docker-compose.yml
+edge/services/openbao/eso-read.hcl
 edge/services/openbao/homelab-openbao-unseal.service
 edge/services/openbao/homelab-openbao-unseal.sh
 edge/services/openbao/install.sh

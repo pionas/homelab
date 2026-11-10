@@ -41,6 +41,9 @@
 600 edge/services/traefik/dynamic/routes.yml
 600 edge.tar.gz
 600 edge/wg0.conf
+700 gitops
+600 gitops/deploy_key
+600 gitops/deploy_key.pub
 600 INSTALL_ORDER.md
 700 k3s-ca
 700 k3s-ca/vps1
@@ -127,6 +130,12 @@
 600 vps1/secrets.env
 700 vps1/services
 700 vps1/services/argocd
+700 vps1/services/argocd/clusters
+600 vps1/services/argocd/clusters/vps3.yaml
+600 vps1/services/argocd/clusters/vps4.yaml
+700 vps1/services/argocd/manifests
+600 vps1/services/argocd/manifests/10-argocd-admin.yaml
+600 vps1/services/argocd/manifests/20-repo.yaml
 644 vps1/services/argocd/namespace.yaml
 700 vps1/services/coredns
 600 vps1/services/coredns/db.homelab.internal
