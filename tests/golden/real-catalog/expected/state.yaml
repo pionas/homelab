@@ -72,3 +72,4 @@ routes:
     machine: vps3
     port: 80
     health_path: /healthz
+argocd_host: argo.homelab.internal

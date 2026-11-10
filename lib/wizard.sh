@@ -126,6 +126,14 @@ _wizard_routes() {
   done
 }
 
+# _wizard_argocd_host — the ArgoCD UI address, asked only when ArgoCD is placed.
+_wizard_argocd_host() {
+  [[ -n $(state_query '[.machines[] | select(.services[] == "argocd")][0] // ""') ]] || return 0
+  ui_input ARGOCD_HOST "ArgoCD UI address (VPN only); another domain must resolve to the ArgoCD machine" \
+    "$(state_argocd_host)" || return 1
+  state_set_argocd_host "$UI_ANSWER"
+}
+
 # wizard_collect OUT_DIR GITOPS_REPO — loads OUT_DIR/state.yaml when present (existing machines and
 # their addresses stay as they are) and asks only about what is new.
 wizard_collect() {
@@ -157,6 +165,7 @@ wizard_collect() {
     _wizard_machine "$n" || return 1
   done
   _wizard_routes || return 1
+  _wizard_argocd_host || return 1
   local unused
   unused=$(ui_unused_answers)
   [[ -z $unused ]] || {

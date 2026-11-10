@@ -139,6 +139,17 @@ state_set_wg_key() {
 STATE_ROUTE_PORT=80
 STATE_ROUTE_HEALTH_PATH=/healthz
 
+# Address of the ArgoCD UI (VPN only, k3s Traefik ingress on the ArgoCD machine). Default
+# argo.<STATE_DOMAIN>; another domain may be given (it must then resolve to that machine elsewhere).
+state_argocd_host() {
+  local h
+  h=$(_state_yq -r '.argocd_host // ""')
+  printf '%s\n' "${h:-argo.$STATE_DOMAIN}"
+}
+
+# state_set_argocd_host HOST
+state_set_argocd_host() { H=$1 _state_try '.argocd_host = strenv(H)'; }
+
 # state_add_route HOST MACHINE [FALLBACK] — appends a route; a host already routed is an error.
 state_add_route() {
   local fallback_field=''
@@ -235,6 +246,11 @@ _state_check() {
   done < <(_state_yq -r '.admin_devices[] | ["'"$_STATE_ROW"'", .name // "", .type // "", .wg_ip // ""] | join("'"$_STATE_FS"'")' 2>/dev/null)
 
   _state_check_routes || rc=1
+  local argo
+  argo=$(_state_yq -r '.argocd_host // ""')
+  if [[ -n $argo && ! $argo =~ ^[a-z0-9]+(-[a-z0-9]+)*(\.[a-z0-9]+(-[a-z0-9]+)*)+$ ]]; then
+    _state_err "argocd_host must be a lowercase domain name, got: '$argo'"
+  fi
   _state_check_port_overrides || rc=1
 
   # wg_public_key is optional (set by lib/wg.sh); when present it must be a key.

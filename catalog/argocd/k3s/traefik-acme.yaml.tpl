@@ -1,0 +1,27 @@
+# The k3s Traefik of the ArgoCD machine (chart bundled with k3s): ACME resolver "stepca" against the
+# homelab step-ca over WireGuard, trusting the homelab root CA (ConfigMap homelab-root-ca, created by
+# install.sh from common/root_ca.crt), certificates kept on a volume.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    certificatesResolvers:
+      stepca:
+        acme:
+          email: "admin@${DOMAIN}"
+          caServer: "https://${STEP_CA_IP}:${STEP_CA_PORT}/acme/acme/directory"
+          storage: /data/acme.json
+          httpChallenge:
+            entryPoint: web
+    env:
+      - name: LEGO_CA_CERTIFICATES
+        value: /etc/homelab-ca/root_ca.crt
+    volumes:
+      - name: homelab-root-ca
+        mountPath: /etc/homelab-ca
+        type: configMap
+    persistence:
+      enabled: true

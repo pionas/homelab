@@ -30,13 +30,27 @@ wait_for() {
   done
 }
 
+# install_traefik_acme — the k3s Traefik gets the step-ca resolver and the root CA it trusts.
+install_traefik_acme() {
+  local cm=$HOMELAB_STATE_DIR/homelab-root-ca.yaml
+  if ((DRY_RUN)); then
+    printf '[dry-run] ConfigMap kube-system/homelab-root-ca from %s\n' "$HOMELAB_COMMON_DIR/root_ca.crt"
+  else
+    k3s kubectl -n kube-system create configmap homelab-root-ca --from-file=root_ca.crt="$HOMELAB_COMMON_DIR/root_ca.crt" \
+      --dry-run=client -o yaml >"$cm"
+    kubectl apply -f "$cm"
+    rm -f "$cm"
+  fi
+  kubectl apply -f "$SERVICE_DIR/k3s/traefik-acme.yaml"
+}
+
 install_argocd() {
   local runtime manifest=$HOMELAB_STATE_DIR/argocd-install-$ARGOCD_VERSION.yaml f
   runtime=$(service_runtime "$SERVICE_ID") || exit 1
   [[ $runtime == k3s ]] || die "$SERVICE_ID runs only in k3s"
-  for f in manifests/00-namespaces.yaml manifests/10-argocd-admin.yaml manifests/20-repo.yaml \
-    manifests/30-openbao-token.yaml manifests/40-external-secrets-app.yaml manifests/50-root-app.yaml \
-    store/cluster-secret-store.yaml; do
+  for f in manifests/00-namespaces.yaml manifests/10-argocd-admin.yaml manifests/15-argocd-config.yaml \
+    manifests/20-repo.yaml manifests/30-openbao-token.yaml manifests/40-external-secrets-app.yaml \
+    manifests/50-root-app.yaml manifests/60-ingress.yaml store/cluster-secret-store.yaml k3s/traefik-acme.yaml; do
     [[ -r $SERVICE_DIR/$f ]] || die "missing $SERVICE_DIR/$f: only the ArgoCD machine's package has it"
   done
   grep -q 'server: "http://[0-9]' "$SERVICE_DIR/store/cluster-secret-store.yaml" ||
@@ -47,6 +61,7 @@ install_argocd() {
   fi
   ((DRY_RUN)) || wait_for "k3s API" k3s kubectl get --raw=/readyz
   run install -d -m 700 "$HOMELAB_STATE_DIR"
+  install_traefik_acme
   fetch "$ARGOCD_MANIFEST_URL" "$manifest"
   verify_sha256 "$manifest" "$ARGOCD_MANIFEST_SHA256"
   kubectl apply -f "$SERVICE_DIR/manifests/00-namespaces.yaml"
@@ -57,6 +72,8 @@ install_argocd() {
     kubectl apply -f "$SERVICE_DIR/clusters/"
   fi
   run rm -f "$manifest"
+  # argocd-server reads server.insecure (15-argocd-config.yaml) only when it starts.
+  kubectl -n argocd rollout restart deployment argocd-server
   # ArgoCD installs External Secrets asynchronously; its CRDs must exist before the store.
   if ((DRY_RUN)); then
     log_info "would wait for CRD $ESO_CRD (External Secrets, synced by ArgoCD)"
@@ -65,7 +82,8 @@ install_argocd() {
     k3s kubectl wait --for=condition=Established --timeout="${WAIT_SECONDS}s" crd/"$ESO_CRD" >/dev/null
   fi
   kubectl apply -f "$SERVICE_DIR/store/cluster-secret-store.yaml"
-  log_info "ArgoCD $ARGOCD_VERSION installed; $(compgen -G "$SERVICE_DIR/clusters/*.yaml" | wc -l) cluster(s) registered"
+  log_info "ArgoCD $ARGOCD_VERSION installed at https://$(sed -n 's/^    - host: "\(.*\)"$/\1/p' "$SERVICE_DIR/manifests/60-ingress.yaml");" \
+    "$(compgen -G "$SERVICE_DIR/clusters/*.yaml" | wc -l) cluster(s) registered"
 }
 
 step "50-$SERVICE_ID" install_argocd
