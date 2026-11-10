@@ -39,6 +39,8 @@ fakes() {
   fake sshd 'case $1 in -T) echo "port ${FAKE_SSHD_PORT:-22}" ;; esac'
   fake getent '[[ -z ${FAKE_NO_NET:-} ]]'
   fake systemd-detect-virt '[[ -n ${FAKE_CONTAINER:-} ]]'
+  # Only `bao status` (step 90); the OpenBao tests replace it with a fuller fake.
+  fake docker '[[ $* == *"bao status"* ]] && printf "{\n  \"initialized\": true,\n  \"sealed\": ${FAKE_BAO_SEALED:-false}\n}\n"'
   fake dpkg '[[ $1 == --print-architecture ]] && echo "${FAKE_ARCH:-amd64}"'
   fake modinfo '[[ -z ${FAKE_NO_WG_MODULE:-} ]]'
   fake id '[[ $1 == -u && -n ${FAKE_ADMIN_EXISTS:-} ]] && echo 1000 || exit 1'
@@ -1069,4 +1071,137 @@ redpanda_package() {
   [[ $output == *"install -D -m 600 $PKG/node/services/typesense/typesense.env /opt/homelab/typesense/typesense.env"* ]]
   before 'install -d -m 700 -o 10000 -g 10000 /var/lib/homelab/data/typesense' \
     'docker compose -f /opt/homelab/typesense/docker-compose.yml up -d'
+}
+
+# --- 45 openbao (catalog service) -------------------------------------------------------
+
+# openbao_package — services/openbao/ as rendered for the OpenBao machine, and a fake docker that
+# answers `bao status` per FAKE_BAO (uninit|sealed|unsealed|down) and records stdin of other calls.
+openbao_package() {
+  local d=$PKG/node/services/openbao f
+  mkdir -p "$d/kv"
+  cp "$REPO_ROOT"/catalog/openbao/{install.sh,homelab-openbao-unseal.sh,homelab-openbao-unseal.service} "$d/"
+  echo x >"$d/docker-compose.yml" && echo x >"$d/config.hcl"
+  echo '{"ROOT_USERNAME": "root", "ROOT_PASSWORD": "pg-secret-value"}' >"$d/kv/postgresql.json"
+  echo '{"DEFAULT_USERNAME": "app", "DEFAULT_PASSWORD": "valkey-secret"}' >"$d/kv/valkey.json"
+  node_env compose 51820 22 "openbao" "8200" ""
+  printf 'COMPOSE_SERVICES="openbao"\n' >>"$PKG/node/node.env"
+  fake docker 'case "$*" in
+    *"bao status -format=json"*)
+      case ${FAKE_BAO:-down} in
+        uninit) printf "{\n  \"initialized\": false,\n  \"sealed\": true\n}\n"; exit 2 ;;
+        sealed) printf "{\n  \"initialized\": true,\n  \"sealed\": true\n}\n"; exit 2 ;;
+        unsealed) printf "{\n  \"initialized\": true,\n  \"sealed\": false\n}\n" ;;
+        *) exit 1 ;;
+      esac ;;
+    *"bao secrets list"*) [[ -n ${FAKE_BAO_KV:-} ]] && echo "{\"homelab/\": {}}" ;;
+    *) printf "%s\n" "$*" >>"'"$T"'/docker.args"; cat >>"'"$T"'/docker.stdin" ;;
+  esac'
+}
+
+# openbao_initialized — the init file the first install left on the machine.
+openbao_initialized() {
+  mkdir -p "$T/state/openbao"
+  printf '{\n  "unseal_keys_b64": [\n    "dW5zZWFsLWtleS0xMjM0NTY3ODkwYWJjZGVm"\n  ],\n  "root_token": "s.RootTokenValue123"\n}\n' \
+    >"$T/state/openbao/init.json"
+}
+
+@test "45: not initialized -> operator init, then unseal, then the secrets are loaded" {
+  openbao_package
+  FAKE_BAO=uninit service openbao
+  [ "$status" -eq 0 ]
+  before 'bao operator init -key-shares=1 -key-threshold=1 -format=json > .*/openbao/init.json \(mode 600\)' 'unseal with the key'
+  [[ $output == *"load postgresql.json valkey.json"* ]]
+  before 'unseal with the key' 'install -m 644 .*homelab-openbao-unseal.service /etc/systemd/system/'
+  [[ $output == *"systemctl enable homelab-openbao-unseal.service"* ]]
+}
+
+@test "45: already initialized -> never operator init; unseal and kv put get secrets on stdin only" {
+  openbao_package
+  openbao_initialized
+  FAKE_BAO=sealed service openbao
+  [ "$status" -eq 0 ]
+  [[ $output != *"operator init"* ]]
+  [[ $stderr == *"OpenBao already initialized"* ]]
+  before 'bao write -format=json sys/unseal -' 'bao secrets enable -path=homelab kv-v2'
+  [[ $output == *"bao kv put -mount=homelab postgresql -"* && $output == *"bao kv put -mount=homelab valkey -"* ]]
+  # The key, the token and the secret values never appear in the output or in a command line.
+  [[ $output != *dW5zZWFs* && $output != *RootTokenValue* && $output != *pg-secret-value* ]]
+  [[ $stderr != *dW5zZWFs* && $stderr != *RootTokenValue* ]]
+}
+
+@test "45: an existing KV mount is not enabled again; an unsealed store is not unsealed again" {
+  openbao_package
+  openbao_initialized
+  FAKE_BAO=unsealed FAKE_BAO_KV=1 service openbao
+  [ "$status" -eq 0 ]
+  [[ $output != *"sys/unseal"* && $output != *"secrets enable"* ]]
+  [[ $output == *"bao kv put -mount=homelab postgresql -"* ]]
+}
+
+@test "45: initialized without the init file stops (the key would be lost); never re-initializes" {
+  openbao_package
+  FAKE_BAO=sealed service openbao
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"is initialized but"*"init.json is missing"*"never initialize again"* ]]
+  [[ $output != *"operator init"* ]]
+}
+
+@test "45: not initialized while an init file exists (data lost?) stops instead of a new init" {
+  openbao_package
+  openbao_initialized
+  FAKE_BAO=uninit service openbao
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"is not initialized but"*"init.json exists"* ]]
+  [[ $output != *"operator init"* ]]
+}
+
+@test "45: a package without kv/ (another machine) stops before anything changes" {
+  openbao_package
+  rm -r "$PKG/node/services/openbao/kv"
+  service openbao
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"only the OpenBao machine's package has the secrets"* ]]
+  [[ $output != *"[dry-run]"* ]]
+}
+
+@test "45: in a container OpenBao is configured but not initialized" {
+  openbao_package
+  FAKE_CONTAINER=1 FAKE_BAO=uninit service openbao
+  [ "$status" -eq 0 ]
+  [[ $output != *"operator init"* ]]
+  [[ $stderr == *"skipped in container: init, unseal and loading secrets"* ]]
+}
+
+@test "unseal unit script: unseals a sealed store with the key on stdin, never as an argument" {
+  openbao_package
+  openbao_initialized
+  run env PATH="$T/bin:$PATH" HOMELAB_STATE_DIR="$T/state" FAKE_BAO=sealed bash "$REPO_ROOT/catalog/openbao/homelab-openbao-unseal.sh"
+  # The fake stays sealed, so the script reports it; what matters is how the key was passed.
+  [[ $output == *"still sealed after unseal"* ]]
+  grep -qx 'exec -i homelab-openbao bao write -format=json sys/unseal -' "$T/docker.args"
+  grep -qF '{"key":"dW5zZWFsLWtleS0xMjM0NTY3ODkwYWJjZGVm"}' "$T/docker.stdin"
+  run ! grep -q dW5zZWFs "$T/docker.args"
+}
+
+@test "unseal unit script: nothing to do when unsealed; fails without the init file" {
+  openbao_package
+  openbao_initialized
+  run env PATH="$T/bin:$PATH" HOMELAB_STATE_DIR="$T/state" FAKE_BAO=unsealed bash "$REPO_ROOT/catalog/openbao/homelab-openbao-unseal.sh"
+  [ "$status" -eq 0 ]
+  [[ $output == *"already unsealed"* ]]
+  rm "$T/state/openbao/init.json"
+  run env PATH="$T/bin:$PATH" HOMELAB_STATE_DIR="$T/state" bash "$REPO_ROOT/catalog/openbao/homelab-openbao-unseal.sh"
+  [ "$status" -eq 1 ]
+  [[ $output == *"nothing to unseal with"* ]]
+}
+
+@test "90: a sealed OpenBao fails the verification" {
+  node_env compose 51820 22 "openbao" "8200" ""
+  FAKE_BAO_SEALED=true verify
+  [ "$status" -eq 1 ]
+  [[ $stderr == *"OpenBao is sealed or not running"* ]]
+  verify
+  [ "$status" -eq 0 ]
+  [[ $stderr == *"verify OK: OpenBao unsealed"* ]]
 }

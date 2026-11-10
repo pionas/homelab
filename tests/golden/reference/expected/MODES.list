@@ -132,6 +132,12 @@
 600 vps1/services/coredns/db.homelab.internal
 700 vps1/services/node-agent
 700 vps1/services/openbao
+700 vps1/services/openbao/kv
+600 vps1/services/openbao/kv/argocd.json
+600 vps1/services/openbao/kv/openbao.json
+600 vps1/services/openbao/kv/postgresql.json
+600 vps1/services/openbao/kv/redis.json
+600 vps1/services/openbao/kv/step-ca.json
 700 vps1/services/step-ca
 600 vps1.tar.gz
 600 vps1/wg0.conf

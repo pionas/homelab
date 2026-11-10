@@ -48,5 +48,11 @@ vps1/services/coredns/
 vps1/services/coredns/db.homelab.internal
 vps1/services/node-agent/
 vps1/services/openbao/
+vps1/services/openbao/kv/
+vps1/services/openbao/kv/argocd.json
+vps1/services/openbao/kv/openbao.json
+vps1/services/openbao/kv/postgresql.json
+vps1/services/openbao/kv/redis.json
+vps1/services/openbao/kv/step-ca.json
 vps1/services/step-ca/
 vps1/wg0.conf

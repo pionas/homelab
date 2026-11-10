@@ -218,11 +218,36 @@ render_valkey_acl() {
     "${_SECRETS[VALKEY_VIEWER_USERNAME]}" "$viewer"
 }
 
+# render_openbao_kv DIR OUT_DIR — DIR/kv/<id>.json for every service of the state with accounts:
+# {"<ROLE>_USERNAME": ..., "<ROLE>_PASSWORD": ...} from OUT_DIR/secrets.env. Only the OpenBao
+# machine's package gets them: the installer loads them into the KV store (#18: External Secrets).
+render_openbao_kv() {
+  local dir=$1 id role prefix sep
+  local -a ids
+  _secrets_read "$2/secrets.env" || return 1
+  mapfile -t ids < <(_secrets_state_services)
+  mkdir -p "$dir/kv"
+  for id in "${ids[@]}"; do
+    [[ -n $(catalog_get "$id" SECRETS) ]] || continue
+    prefix=$(secrets_prefix "$id") sep=''
+    {
+      printf '{'
+      for role in $(catalog_get "$id" SECRETS); do
+        printf '%s"%s_USERNAME": "%s", "%s_PASSWORD": "%s"' "$sep" "$role" "${_SECRETS[${prefix}_${role}_USERNAME]}" \
+          "$role" "${_SECRETS[${prefix}_${role}_PASSWORD]}"
+        sep=', '
+      done
+      printf '}\n'
+    } >"$dir/kv/$id.json"
+  done
+}
+
 # _render_service_extras DIR ID MACHINE_DIR — files a service needs that are computed from the
 # whole state or from the machine's secrets.
 _render_service_extras() {
   case $2 in
     valkey) render_valkey_acl "$3" >"$1/users.acl" ;;
+    openbao) render_openbao_kv "$1" "${3%/*}" ;;
     coredns) render_dns_zone >"$1/db.$STATE_DOMAIN" ;;
     traefik)
       mkdir -p "$1/dynamic"

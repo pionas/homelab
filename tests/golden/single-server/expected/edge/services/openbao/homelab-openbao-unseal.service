@@ -1,0 +1,16 @@
+# Installed by catalog/openbao/install.sh to /etc/systemd/system/.
+# shortcut: auto-unseal from a key file on the same machine (VirtualBox stage); production needs a
+#   manual unseal or an external KMS (decision "Unseal OpenBao" in docs/plan-instalacji.md).
+[Unit]
+Description=Unseal OpenBao (homelab)
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/homelab-openbao-unseal
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

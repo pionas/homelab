@@ -1,0 +1,17 @@
+# OpenBao (MPL-2.0, instead of Vault): secret store for applications (External Secrets, #18).
+# Host network, API only on the WireGuard address (config.hcl). Data stays on the host; after every
+# start the store is sealed until homelab-openbao-unseal.service unseals it.
+services:
+  openbao:
+    image: openbao/openbao:2.7.2
+    container_name: homelab-openbao
+    restart: unless-stopped
+    network_mode: host
+    # The image's entrypoint adds -config=/openbao/config itself.
+    command: ["server"]
+    environment:
+      BAO_ADDR: "http://${WG_IP}:${PORT_8200}"
+    volumes:
+      - "./config.hcl:/openbao/config/config.hcl:ro"
+      - "/var/lib/homelab/data/openbao:/openbao/data"
+    security_opt: ["no-new-privileges:true"]
