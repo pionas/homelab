@@ -43,6 +43,12 @@ vps1/node.env
 vps1/secrets.env
 vps1/services/
 vps1/services/argocd/
+vps1/services/argocd/clusters/
+vps1/services/argocd/clusters/vps3.yaml
+vps1/services/argocd/clusters/vps4.yaml
+vps1/services/argocd/manifests/
+vps1/services/argocd/manifests/10-argocd-admin.yaml
+vps1/services/argocd/manifests/20-repo.yaml
 vps1/services/argocd/namespace.yaml
 vps1/services/coredns/
 vps1/services/coredns/db.homelab.internal

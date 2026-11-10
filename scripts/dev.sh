@@ -68,7 +68,7 @@ cmd_test() {
 
 GOLDEN_CATALOG=tests/fixtures/catalog-wizard
 GOLDEN_REPO=git@example.com:pionas/homelab-gitops.git
-WIZARD_TOOLS=(yq wg openssl qrencode step)
+WIZARD_TOOLS=(yq wg openssl qrencode step ssh-keygen perl)
 
 # Deterministic generators for golden runs; exported so wizard.sh can call them.
 _golden_next() {
@@ -79,7 +79,10 @@ _golden_next() {
 }
 golden_secret() { echo "golden-secret-$(_golden_next secret-n)"; }
 golden_wg_key() { printf 'golden-wg-%s' "$(_golden_next wg-n)" | openssl dgst -sha256 -binary | base64; }
-export -f _golden_next golden_secret golden_wg_key
+# The deploy key and the bcrypt salt are random by nature; golden runs use fixed test values.
+golden_gitops_key() { cp "$GOLDEN_FIXTURES/gitops/deploy_key" "$1" && cp "$GOLDEN_FIXTURES/gitops/deploy_key.pub" "$1.pub"; }
+golden_salt() { echo goldengoldengoldengold; }
+export -f _golden_next golden_secret golden_wg_key golden_gitops_key golden_salt
 
 # _golden_generate SCENARIO WORK — runs the wizard on SCENARIO/answers.txt into WORK/out.
 _golden_generate() {
@@ -91,7 +94,8 @@ _golden_generate() {
   fi
   echo 0 >"$work/secret-n"
   echo 0 >"$work/wg-n"
-  GOLDEN_DIR=$work SECRETS_GENERATOR=golden_secret WG_KEYGEN=golden_wg_key ./wizard.sh \
+  GOLDEN_DIR=$work GOLDEN_FIXTURES=$PWD/tests/fixtures SECRETS_GENERATOR=golden_secret WG_KEYGEN=golden_wg_key \
+    GITOPS_KEYGEN=golden_gitops_key ARGOCD_SALT_GENERATOR=golden_salt ./wizard.sh \
     --catalog "$catalog" --gitops-repo "$GOLDEN_REPO" --answers "$scenario/answers.txt" \
     --out "$work/out" >"$work/wizard.log" 2>&1 || {
     cat "$work/wizard.log" >&2
@@ -108,7 +112,8 @@ _golden_normalize() {
   (
     cd "$dest"
     find . -mindepth 1 -printf '%m %P\n' | sort -k2 >MODES.list
-    find . -type f \( -path '*/ca/*' -o -path '*/k3s-ca/*' -o -name root_ca.crt \) -printf '%P\n' |
+    # ArgoCD cluster Secrets embed the cluster CAs, so they are compared by name only as well.
+    find . -type f \( -path '*/ca/*' -o -path '*/k3s-ca/*' -o -name root_ca.crt -o -path '*/argocd/clusters/*' \) -printf '%P\n' |
       sort >CA_FILES.list
     xargs -r rm -f <CA_FILES.list
     # Verbatim copies of the repo's common/*.sh; the archive lists still show they are packaged.
@@ -182,7 +187,10 @@ cmd_validate() {
       }
     done < <(find "$work/out" -type f -name '*.json' | sort)
     if ((${#manifests[@]})); then
+      # CRDs (ArgoCD Application, External Secrets ClusterSecretStore) from the community CRD catalog.
       kubeconform -strict -summary -cache "$(mkdir -p "$HOME/.cache/kubeconform" && echo "$HOME/.cache/kubeconform")" \
+        -schema-location default \
+        -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
         "${manifests[@]}" || rc=1
     fi
     ((rc == 0)) && log_info "validate $scenario OK"

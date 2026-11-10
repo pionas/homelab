@@ -17,7 +17,7 @@ source "$_WIZARD_LIB/ca.sh"
 # shellcheck source=lib/render.sh
 source "$_WIZARD_LIB/render.sh"
 
-WIZARD_TOOLS=(yq wg openssl qrencode step)
+WIZARD_TOOLS=(yq wg openssl qrencode step ssh-keygen perl)
 
 declare -g WIZARD_EXISTING=0
 
@@ -173,6 +173,9 @@ wizard_generate() {
   secrets_generate "$out_dir" || return 1
   wg_ensure_keys "$out_dir" || return 1
   ca_ensure_root "$out_dir" && ca_ensure_intermediate "$out_dir" || return 1
+  if [[ -n $(state_query '[.machines[] | select(.services[] == "argocd")][0] // ""') ]]; then
+    gitops_ensure_deploy_key "$out_dir" || return 1
+  fi
   while IFS= read -r name; do
     secrets_for_machine "$out_dir" "$name" && wg_render_machine "$out_dir" "$name" || return 1
   done < <(state_query '.machines[].name')

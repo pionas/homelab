@@ -22,6 +22,8 @@ _STATE_NAME_RE='^[a-z0-9]+(-[a-z0-9]+)*$'
 STATE_DOMAIN=homelab.internal
 # shellcheck disable=SC2034
 STATE_DNS_NAMES="argo:argocd grafana:argocd bao:openbao valkey:valkey redpanda:redpanda ca:step-ca s3:rustfs"
+# shellcheck disable=SC2034 # also used by lib/render.sh
+STATE_GITOPS_REPO_RE='^(git@[A-Za-z0-9.-]+:|ssh://(git@)?[A-Za-z0-9.-]+(:[0-9]+)?/)[A-Za-z0-9._/-]+$'
 # A WireGuard key: 32 bytes in base64.
 STATE_WG_KEY_RE='^[A-Za-z0-9+/]{43}=$'
 
@@ -178,7 +180,9 @@ _state_check() {
   }
   local repo rt
   IFS=$_STATE_FS read -r repo rt < <(_state_yq -r '[.gitops_repo // "", .default_runtime // ""] | join("'"$_STATE_FS"'")')
-  [[ -n $repo ]] || _state_err "gitops_repo is empty"
+  # ArgoCD reads it with the wizard's read-only deploy key, so only SSH URLs; it lands in manifests.
+  [[ $repo =~ $STATE_GITOPS_REPO_RE ]] ||
+    _state_err "gitops_repo must be an SSH URL (git@host:path or ssh://host/path), got: '$repo'"
   [[ $rt =~ ^(compose|k3s)$ ]] || _state_err "default_runtime must be compose or k3s, got: '$rt'"
   [[ $(_state_yq '(.machines | tag) + (.admin_devices | tag)') == '!!seq!!seq' ]] ||
     _state_err "machines and admin_devices must be lists"

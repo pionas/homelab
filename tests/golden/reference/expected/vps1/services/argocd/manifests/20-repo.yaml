@@ -1,0 +1,21 @@
+# Repository homelab-gitops, read with the read-only deploy key (public half: INSTALL_ORDER.md).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: repo-homelab-gitops
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+type: Opaque
+stringData:
+  type: git
+  url: "git@example.com:pionas/homelab-gitops.git"
+  sshPrivateKey: |
+    -----BEGIN OPENSSH PRIVATE KEY-----
+    b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+    QyNTUxOQAAACDtYBPOEgYm8TGS0aiWFCfppOie4uWxsmecjf/jp5LMGgAAALCJOzaDiTs2
+    gwAAAAtzc2gtZWQyNTUxOQAAACDtYBPOEgYm8TGS0aiWFCfppOie4uWxsmecjf/jp5LMGg
+    AAAECF6gxwpqkck7nR1igZYZ24oi+nZhqo+GHfMkS2oYW8q+1gE84SBibxMZLRqJYUJ+mk
+    6J7i5bGyZ5yN/+OnkswaAAAAK2hvbWVsYWItYXJnb2NkIGdvbGRlbiB0ZXN0IGtleSAobm
+    90IHNlY3JldCkBAg==
+    -----END OPENSSH PRIVATE KEY-----

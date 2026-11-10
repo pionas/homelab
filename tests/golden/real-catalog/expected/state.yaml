@@ -51,6 +51,7 @@ machines:
     ssh_port: 22
     services:
       - node-exporter
+      - app-cluster
     wg_public_key: cG1SqOaNHLFv0/S5HSxpiJBux/0bYAne0LDMFIXm3n0=
 admin_devices:
   - name: laptop

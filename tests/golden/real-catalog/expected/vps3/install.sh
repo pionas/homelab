@@ -7,7 +7,7 @@ set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 # Steps read node.env and secrets.env from here.
 export HOMELAB_NODE_DIR=$PWD
-IDS=(00 01 02 03 04 11 12-node-exporter 90)
+IDS=(00 01 02 03 04 11 12-node-exporter 60-app-cluster 90)
 declare -A ALIASES=(["03-ssh"]=03)
 STEPS=(
   ../common/00-preflight.sh
@@ -17,6 +17,7 @@ STEPS=(
   ../common/04-ca-trust.sh
   ../common/11-k3s.sh
   services/node-exporter/install.sh
+  services/app-cluster/install.sh
   ../common/90-verify.sh
 )
 only='' args=()

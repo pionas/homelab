@@ -1,0 +1,12 @@
+# The read-only OpenBao token External Secrets authenticates with (created with this ID by the
+# OpenBao installer, policy eso-read). Mode 600 in the package, like secrets.env.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: openbao-token
+  namespace: external-secrets
+  labels:
+    app.kubernetes.io/managed-by: homelab
+type: Opaque
+stringData:
+  token: "golden-secret-5"

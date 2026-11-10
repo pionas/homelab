@@ -1,0 +1,10 @@
+# ArgoCD admin password (bcrypt of ARGOCD_ROOT_PASSWORD); merged into argocd-secret.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: argocd-secret
+  namespace: argocd
+type: Opaque
+stringData:
+  admin.password: "$2b$10$goldengoldengoldengolO48Jabi2XINPBodTKThAoT2qzHynjJBO"
+  admin.passwordMtime: "2000-01-01T00:00:00Z"

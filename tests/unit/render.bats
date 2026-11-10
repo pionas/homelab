@@ -374,3 +374,55 @@ listing() { tar -tzf "$OUT/$1.tar.gz"; }
   [ -z "$output" ]
   [[ $(tar -tzf "$out/vps2.tar.gz") != *kv/* ]]
 }
+
+# --- ArgoCD (#18) ------------------------------------------------------------------------
+
+@test "argocd: one cluster Secret per application cluster, API on the WG address, the cluster's CA and argocd cert" {
+  local d="$OUT/vps1/services/argocd/clusters" n f
+  # reference: vps3 and vps4 run app-cluster, vps1 (ArgoCD's own) is in-cluster
+  run bash -c "cd '$d' && ls"
+  [ "$output" = $'vps3.yaml\nvps4.yaml' ]
+  [ "$(find "$d" -name "*.yaml" | wc -l)" = "$(yq '[.machines[] | select(.services[] == "app-cluster")] | length' "$OUT/state.yaml")" ]
+  for n in vps3 vps4; do
+    f="$d/$n.yaml"
+    [ "$(yq '.metadata.labels."argocd.argoproj.io/secret-type"' "$f")" = cluster ]
+    [ "$(yq '.stringData.server' "$f")" = "https://$(N=$n yq '.machines[] | select(.name == strenv(N)) | .wg_ip' "$OUT/state.yaml"):6443" ]
+    [[ $(yq '.stringData.server' "$f") == https://10.100.10.* ]]
+    [ "$(yq '.stringData.config' "$f" | yq -p json -r '.tlsClientConfig.caData' | base64 -d)" = "$(cat "$OUT/k3s-ca/$n/server-ca.crt")" ]
+    [ "$(yq '.stringData.config' "$f" | yq -p json -r '.tlsClientConfig.certData' | base64 -d)" = "$(cat "$OUT/k3s-ca/$n/argocd.crt")" ]
+    [ "$(stat -c %a "$f")" = 600 ]
+  done
+}
+
+@test "real catalog argocd: repository Secret with the deploy key, root app on the gitops repo, ESO first, store -> OpenBao" {
+  local out="$BATS_TEST_TMPDIR/argo"
+  run "$REPO_ROOT/wizard.sh" --out "$out" --gitops-repo git@example.com:pionas/homelab-gitops.git \
+    --answers "$REPO_ROOT/tests/golden/real-catalog/answers.txt"
+  [ "$status" -eq 0 ]
+  local d="$out/vps1/services/argocd" f
+  [ "$(yq '.stringData.url' "$d/manifests/20-repo.yaml")" = git@example.com:pionas/homelab-gitops.git ]
+  [ "$(yq '.stringData.sshPrivateKey' "$d/manifests/20-repo.yaml")" = "$(cat "$out/gitops/deploy_key")" ]
+  [ "$(stat -c %a "$out/gitops/deploy_key")" = 600 ]
+  [ "$(yq '.spec.source.repoURL' "$d/manifests/50-root-app.yaml")" = git@example.com:pionas/homelab-gitops.git ]
+  [ "$(yq '.spec.source.chart + ":" + .spec.source.targetRevision' "$d/manifests/40-external-secrets-app.yaml")" = external-secrets:2.13.0 ]
+  [ "$(yq '.metadata.annotations."argocd.argoproj.io/sync-wave"' "$d/manifests/40-external-secrets-app.yaml")" = -1 ]
+  [ "$(yq '.spec.provider.vault.server' "$d/store/cluster-secret-store.yaml")" = http://10.100.10.101:8200 ]
+  [ "$(yq '.stringData.token' "$d/manifests/30-openbao-token.yaml")" = "$(sed -n 's/^OPENBAO_ESO_PASSWORD=//p' "$out/secrets.env")" ]
+  # Files with secrets: the admin hash, the deploy key, the OpenBao token, the cluster credentials.
+  for f in "$d"/manifests/{10-argocd-admin,20-repo,30-openbao-token}.yaml "$d"/clusters/*.yaml; do
+    [ "$(stat -c %a "$f")" = 600 ]
+  done
+  # The admin hash matches ARGOCD_ROOT_PASSWORD (crypt with the hash as salt gives the hash back).
+  local hash pw
+  hash=$(yq '.stringData."admin.password"' "$d/manifests/10-argocd-admin.yaml")
+  pw=$(sed -n 's/^ARGOCD_ROOT_PASSWORD=//p' "$out/secrets.env")
+  [ "$(printf '%s' "$pw" | H=$hash perl -e 'my $p = <STDIN>; print crypt($p, $ENV{H})')" = "$hash" ]
+  grep -qF "$(cut -d' ' -f1,2 "$out/gitops/deploy_key.pub")" "$out/INSTALL_ORDER.md"
+  # Keys and cluster credentials only in the ArgoCD machine's package.
+  local m
+  for m in edge vps2 vps3; do
+    run tar -tzf "$out/$m.tar.gz"
+    [[ $output != *argocd/manifests* && $output != *argocd/clusters* ]]
+    run ! grep -rqF "$(sed -n 2p "$out/gitops/deploy_key")" "$out/$m"
+  done
+}

@@ -70,6 +70,8 @@ vps1/k3s-ca/vps3/server-ca.crt
 vps1/k3s-ca/vps4/argocd.crt
 vps1/k3s-ca/vps4/argocd.key
 vps1/k3s-ca/vps4/server-ca.crt
+vps1/services/argocd/clusters/vps3.yaml
+vps1/services/argocd/clusters/vps4.yaml
 vps3/k3s-ca/vps3/client-ca.crt
 vps3/k3s-ca/vps3/client-ca.key
 vps3/k3s-ca/vps3/etcd/peer-ca.crt
