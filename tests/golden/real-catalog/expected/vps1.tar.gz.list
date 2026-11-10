@@ -42,13 +42,17 @@ vps1/services/argocd/
 vps1/services/argocd/clusters/
 vps1/services/argocd/clusters/vps3.yaml
 vps1/services/argocd/install.sh
+vps1/services/argocd/k3s/
+vps1/services/argocd/k3s/traefik-acme.yaml
 vps1/services/argocd/manifests/
 vps1/services/argocd/manifests/00-namespaces.yaml
 vps1/services/argocd/manifests/10-argocd-admin.yaml
+vps1/services/argocd/manifests/15-argocd-config.yaml
 vps1/services/argocd/manifests/20-repo.yaml
 vps1/services/argocd/manifests/30-openbao-token.yaml
 vps1/services/argocd/manifests/40-external-secrets-app.yaml
 vps1/services/argocd/manifests/50-root-app.yaml
+vps1/services/argocd/manifests/60-ingress.yaml
 vps1/services/argocd/store/
 vps1/services/argocd/store/cluster-secret-store.yaml
 vps1/services/coredns/

@@ -257,3 +257,12 @@ expect_state_invalid() {
     [ "$status" -eq 0 ]
   done
 }
+
+@test "argocd_host: default argo.<domain>, another domain can be set, must be a domain name" {
+  run --separate-stderr in_state "state_load '$ST/reference.yaml'; state_argocd_host
+    state_set_argocd_host argo.pionas.dev; state_argocd_host
+    state_set_argocd_host 'Bad Host' && exit 9; state_argocd_host"
+  [ "$status" -eq 0 ]
+  [ "$output" = $'argo.homelab.internal\nargo.pionas.dev\nargo.pionas.dev' ]
+  [[ $stderr == *"argocd_host must be a lowercase domain name, got: 'Bad Host'"* ]]
+}

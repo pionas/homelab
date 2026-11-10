@@ -1214,9 +1214,11 @@ argocd_package() {
   local d=$PKG/node/services/argocd f
   mkdir -p "$d/manifests" "$d/store" "$d/clusters"
   cp "$REPO_ROOT/catalog/argocd/install.sh" "$d/"
-  for f in 00-namespaces 10-argocd-admin 20-repo 30-openbao-token 40-external-secrets-app 50-root-app; do
+  for f in 00-namespaces 10-argocd-admin 15-argocd-config 20-repo 30-openbao-token 40-external-secrets-app 50-root-app; do
     echo "kind: x" >"$d/manifests/$f.yaml"
   done
+  printf '    - host: "argo.homelab.internal"\n' >"$d/manifests/60-ingress.yaml"
+  mkdir -p "$d/k3s" && echo 'kind: x' >"$d/k3s/traefik-acme.yaml"
   echo 'kind: x' >"$d/clusters/vps3.yaml"
   printf 'spec:\n  provider:\n    vault:\n      server: "http://10.100.10.101:8200"\n' >"$d/store/cluster-secret-store.yaml"
   node_env k3s 51820 22 "argocd" "" ""
@@ -1289,4 +1291,28 @@ argocd_package() {
   before 'bao policy write eso-read -' 'bao write sys/auth/token/tune max_lease_ttl=87600h'
   before 'max_lease_ttl=87600h' 'bao write auth/token/create-orphan -'
   [[ $output != *EsoTokenId1234567890* && $stderr != *EsoTokenId1234567890* ]]
+}
+
+@test "03: k3s machines open the ingress (80/443) to the WireGuard network only" {
+  node_env k3s 51820 22 "" "" ""
+  step 03-ufw
+  [ "$status" -eq 0 ]
+  [[ $output == *"[dry-run] ufw allow from 10.100.10.0/24 to any port 80 proto tcp comment homelab-k3s-ingress"* ]]
+  [[ $output == *"[dry-run] ufw allow from 10.100.10.0/24 to any port 443 proto tcp comment homelab-k3s-ingress"* ]]
+  [[ $output != *"ufw allow 80/tcp"* && $output != *"ufw allow 443/tcp"* ]]
+  node_env compose 51820 22 "" "" ""
+  step 03-ufw
+  [[ $output != *homelab-k3s-ingress* ]]
+}
+
+@test "50: argocd configures the k3s Traefik (root CA, step-ca resolver) first and restarts argocd-server after its config" {
+  argocd_package
+  echo 'kind: x' >"$PKG/node/services/argocd/manifests/15-argocd-config.yaml"
+  printf '    - host: "argo.homelab.internal"\n' >"$PKG/node/services/argocd/manifests/60-ingress.yaml"
+  mkdir -p "$PKG/node/services/argocd/k3s" && echo 'kind: x' >"$PKG/node/services/argocd/k3s/traefik-acme.yaml"
+  service argocd
+  [ "$status" -eq 0 ]
+  before 'ConfigMap kube-system/homelab-root-ca' 'kubectl apply -f .*/k3s/traefik-acme.yaml'
+  before 'k3s/traefik-acme.yaml' 'argocd-install-v3.5.6.yaml'
+  before 'services/argocd/manifests/' 'rollout restart deployment argocd-server'
 }

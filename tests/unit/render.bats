@@ -214,7 +214,7 @@ listing() { tar -tzf "$OUT/$1.tar.gz"; }
   # Public (not WG-bound) port mappings: Traefik on the edge only.
   run grep -rlE '^\s+- "[0-9]+:[0-9]+"' "$out" --include=docker-compose.yml
   [ "$output" = "$out/edge/services/traefik/docker-compose.yml" ]
-  grep -qF 'extra_hosts: ["e-konkursy.homelab.internal:10.100.10.100", "pionas.dev:10.100.10.100"]' \
+  grep -qF 'extra_hosts: ["e-konkursy.homelab.internal:10.100.10.100", "pionas.dev:10.100.10.100", "argo.homelab.internal:10.100.10.101"]' \
     "$out/vps1/services/step-ca/docker-compose.yml"
   grep -qx 'e-konkursy IN A 10.100.10.100' "$out/vps1/services/coredns/db.homelab.internal"
   run ! grep -q pionas "$out/vps1/services/coredns/db.homelab.internal" # outside the zone
@@ -425,4 +425,28 @@ listing() { tar -tzf "$OUT/$1.tar.gz"; }
     [[ $output != *argocd/manifests* && $output != *argocd/clusters* ]]
     run ! grep -rqF "$(sed -n 2p "$out/gitops/deploy_key")" "$out/$m"
   done
+}
+
+@test "argocd address: ingress, argocd url, step-ca HTTP-01 host and DNS record follow ARGOCD_HOST" {
+  local out a="$BATS_TEST_TMPDIR/a.txt" host
+  for host in argo.homelab.internal panel.homelab.internal argo.pionas.dev; do
+    out="$BATS_TEST_TMPDIR/argo-$host"
+    {
+      cat "$REPO_ROOT/tests/golden/real-catalog/answers.txt"
+      echo "ARGOCD_HOST=$host"
+    } >"$a"
+    run "$REPO_ROOT/wizard.sh" --out "$out" --gitops-repo git@example.com:g.git --answers "$a"
+    [ "$status" -eq 0 ]
+    local d="$out/vps1/services/argocd"
+    [ "$(yq '.spec.rules[0].host' "$d/manifests/60-ingress.yaml")" = "$host" ]
+    [ "$(yq '.metadata.annotations."traefik.ingress.kubernetes.io/router.tls.certresolver"' "$d/manifests/60-ingress.yaml")" = stepca ]
+    [ "$(yq 'select(.metadata.name == "argocd-cm") | .data.url' "$d/manifests/15-argocd-config.yaml")" = "https://$host" ]
+    grep -qF "\"$host:10.100.10.101\"" "$out/vps1/services/step-ca/docker-compose.yml"
+    [ "$(yq '.spec.valuesContent' "$d/k3s/traefik-acme.yaml" | yq '.certificatesResolvers.stepca.acme.caServer')" = \
+      https://10.100.10.101:9000/acme/acme/directory ]
+  done
+  local zone="$BATS_TEST_TMPDIR/argo-panel.homelab.internal/vps1/services/coredns/db.homelab.internal"
+  grep -qx 'panel IN A 10.100.10.101' "$zone"
+  grep -qx 'argo IN A 10.100.10.101' "$zone"
+  run ! grep -q pionas "$BATS_TEST_TMPDIR/argo-argo.pionas.dev/vps1/services/coredns/db.homelab.internal"
 }

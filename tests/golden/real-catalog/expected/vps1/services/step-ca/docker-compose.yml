@@ -9,7 +9,7 @@ services:
     ports:
       - "10.100.10.101:9000:9000"
     # Route hosts -> the edge, so ACME HTTP-01 checks reach Traefik without depending on CoreDNS.
-    extra_hosts: ["e-konkursy.homelab.internal:10.100.10.100", "pionas.dev:10.100.10.100"]
+    extra_hosts: ["e-konkursy.homelab.internal:10.100.10.100", "pionas.dev:10.100.10.100", "argo.homelab.internal:10.100.10.101"]
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]

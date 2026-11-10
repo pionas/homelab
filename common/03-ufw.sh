@@ -45,6 +45,10 @@ firewall() {
     run ufw allow from "$K3S_POD_NET" comment homelab-k3s-pods
     run ufw allow from "$K3S_SERVICE_NET" comment homelab-k3s-services
     run ufw allow from "$HOMELAB_WG_NET" to any port "$K3S_API_PORT" proto tcp comment homelab-k3s-api
+    # The k3s Traefik ingress (panels such as ArgoCD): VPN only, never public.
+    for port in 80 443; do
+      run ufw allow from "$HOMELAB_WG_NET" to any port "$port" proto tcp comment homelab-k3s-ingress
+    done
   fi
   run ufw default deny incoming
   run ufw default allow outgoing

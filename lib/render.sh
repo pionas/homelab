@@ -118,6 +118,7 @@ _render_templates() {
 #   STEP_CA_IP        WireGuard address of the step-ca machine (Traefik's ACME server)
 #   STEP_CA_PORT      its port (default 9000, unless moved on that machine)
 #   GITOPS_REPO       the homelab-gitops repository (state.yaml, validated SSH URL)
+#   ARGOCD_HOST       the ArgoCD UI address (default argo.<domain>)
 #   OPENBAO_URL       http://<OpenBao machine WG address>:<port> for External Secrets
 #   ACME_EXTRA_HOSTS  route hosts -> the edge, as a YAML flow list for step-ca's extra_hosts, so the
 #                     HTTP-01 check reaches Traefik without depending on CoreDNS
@@ -144,7 +145,13 @@ _render_computed_vars() {
   else
     printf 'OPENBAO_URL=\n'
   fi
-  printf 'ACME_EXTRA_HOSTS=[%s]\n' "$(E=$edge state_query '[(.routes // [])[] | "\"" + .host + ":" + strenv(E) + "\""] | join(", ")')"
+  local argo_ip hosts
+  hosts=$(E=$edge state_query '[(.routes // [])[] | "\"" + .host + ":" + strenv(E) + "\""] | join(", ")')
+  # The ArgoCD UI is served by the ArgoCD machine's own k3s Traefik, so its HTTP-01 check goes there.
+  argo_ip=$(state_query '[.machines[] | select(.services[] == "argocd") | .wg_ip][0] // ""')
+  if [[ -n $argo_ip ]]; then hosts+="${hosts:+, }\"$(state_argocd_host):$argo_ip\""; fi
+  printf 'ACME_EXTRA_HOSTS=[%s]\n' "$hosts"
+  printf 'ARGOCD_HOST=%s\n' "$(state_argocd_host)"
 }
 
 _render_dns_records() {
@@ -154,6 +161,13 @@ _render_dns_records() {
     ip=$(S=${entry#*:} state_query '[.machines[] | select(.services[] == strenv(S)) | .wg_ip][0] // ""')
     [[ -n $ip ]] && printf '%s %s\n' "${entry%%:*}" "$ip"
   done
+  # A custom ArgoCD address inside the zone (argo. is already a panel name).
+  local argo
+  argo=$(state_argocd_host)
+  ip=$(state_query '[.machines[] | select(.services[] == "argocd") | .wg_ip][0] // ""')
+  if [[ -n $ip && $argo == *".$STATE_DOMAIN" && ${argo%".$STATE_DOMAIN"} != argo ]]; then
+    printf '%s %s\n' "${argo%".$STATE_DOMAIN"}" "$ip"
+  fi
   # Application hosts in the zone point at the edge, which routes them.
   # shellcheck disable=SC2016 # $edge is a yq variable
   D=.$STATE_DOMAIN state_query '.machines[0].wg_ip as $edge | (.routes // [])[] | select(.host | test("\\" + strenv(D) + "$")) |

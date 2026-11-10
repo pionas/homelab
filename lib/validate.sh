@@ -116,6 +116,21 @@ validate_plan() {
       rc=1
     fi
   done < <(state_query '(.routes // [])[].host')
+  if [[ -n $(state_query '[.machines[] | select(.services[] == "argocd")][0] // ""') ]]; then
+    local argo
+    argo=$(state_argocd_host)
+    if [[ -n $(H=$argo state_query '(.routes // [])[] | select(.host == strenv(H)) | .host') ]]; then
+      log_error "plan: ArgoCD address $argo is also a public route (panels are VPN only)"
+      rc=1
+    fi
+    label=${argo%".$STATE_DOMAIN"}
+    if [[ $argo == *".$STATE_DOMAIN" && $label != argo ]] &&
+      { [[ -n $(N=$label state_query '.machines[] | select(.name == strenv(N)) | .name') ]] ||
+        [[ " ns ${STATE_DNS_NAMES//:/ } " == *" $label "* ]]; }; then
+      log_error "plan: ArgoCD address $argo clashes with a machine or panel name in $STATE_DOMAIN"
+      rc=1
+    fi
+  fi
   local -a required=("${VALIDATE_ALWAYS_REQUIRED[@]}")
   ((i > 1)) && required+=("${VALIDATE_MULTI_MACHINE_REQUIRED[@]}")
   for id in "${required[@]}"; do

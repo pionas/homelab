@@ -334,3 +334,31 @@ field() { yq "$1" "$OUT/state.yaml"; }
   [ "$status" -ne 0 ]
   [[ $output == *"port 53 of coredns cannot be moved"* ]]
 }
+
+# --- ArgoCD address --------------------------------------------------------------------
+
+@test "argocd address: default argo.homelab.internal; ARGOCD_HOST sets another domain" {
+  wizard two-machines.txt --gitops-repo "$REPO"
+  [ "$status" -eq 0 ]
+  [ "$(field '.argocd_host')" = argo.homelab.internal ]
+  printf 'ARGOCD_HOST=argo.pionas.dev\n' | cat "$ANS/two-machines.txt" - >"$BATS_TEST_TMPDIR/a.txt"
+  rm -rf "$OUT"
+  run "$REPO_ROOT/wizard.sh" --catalog "$CAT" --out "$OUT" --answers "$BATS_TEST_TMPDIR/a.txt" --gitops-repo "$REPO"
+  [ "$status" -eq 0 ]
+  [ "$(field '.argocd_host')" = argo.pionas.dev ]
+}
+
+@test "argocd address: not asked without ArgoCD; may not be a public route or a machine name" {
+  printf 'ARGOCD_HOST=argo.pionas.dev\n' | cat "$ANS/one-machine.txt" - >"$BATS_TEST_TMPDIR/a.txt"
+  run "$REPO_ROOT/wizard.sh" --catalog "$CAT" --out "$OUT" --answers "$BATS_TEST_TMPDIR/a.txt" --gitops-repo "$REPO"
+  [ "$status" -ne 0 ]
+  [[ $output == *"answers not used by any question (typo?): ARGOCD_HOST"* ]]
+  printf 'ROUTES="argo.pionas.dev:edge"\nARGOCD_HOST=argo.pionas.dev\n' | cat "$ANS/two-machines.txt" - >"$BATS_TEST_TMPDIR/a.txt"
+  run "$REPO_ROOT/wizard.sh" --catalog "$CAT" --out "$OUT" --answers "$BATS_TEST_TMPDIR/a.txt" --gitops-repo "$REPO"
+  [ "$status" -ne 0 ]
+  [[ $output == *"ArgoCD address argo.pionas.dev is also a public route"* ]]
+  printf 'ARGOCD_HOST=vps1.homelab.internal\n' | cat "$ANS/two-machines.txt" - >"$BATS_TEST_TMPDIR/a.txt"
+  run "$REPO_ROOT/wizard.sh" --catalog "$CAT" --out "$OUT" --answers "$BATS_TEST_TMPDIR/a.txt" --gitops-repo "$REPO"
+  [ "$status" -ne 0 ]
+  [[ $output == *"ArgoCD address vps1.homelab.internal clashes with a machine or panel name"* ]]
+}

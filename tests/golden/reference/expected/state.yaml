@@ -87,3 +87,4 @@ admin_devices:
     type: windows
     wg_ip: 10.100.10.203
     wg_public_key: +v2llRQuJfo8R8jtGDKiN/mhWzVJmOxKcl+oWFWhSkg=
+argocd_host: argo.homelab.internal
